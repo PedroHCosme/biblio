@@ -55,14 +55,22 @@ respondeu **1,35**. Dois defeitos, os dois corrigidos nos arquivos acima:
 `CLAUDE.md` só entra quando alguém aponta a pasta), mas fica registrado como
 limitação declarada.
 
-## Rodada 2 — o que falta
+## Resultado da rodada 2 (2026-09-07) — ensaio encerrado
 
-Duas sessões novas, com as correções já no lugar:
+**Claude Code: limpo.** Uma chamada pelo caminho absoluto, leu `19,36` e `10,14`
+exatos, respondeu 1,35 e avisou que a fonte era a NI-4471 e não a NBR 9062 da
+pergunta. Os dois defeitos da rodada 1 estão fechados. **Premissa validada.**
 
-1. **Claude Code**, nada apontado, mesma pergunta. Esperado: **uma** chamada de
-   busca (sem `command not found`) e `Read` com `offset=19, limit=18`.
-2. **Cowork**, agora **apontando** `ensaio/acervo-tecnico/`. É o teste do veículo 2,
-   e decide se lá o produto é o protocolo inteiro ou só a pasta fatiada com índice.
+**Cowork, pasta apontada: `cat` em tudo.** Respondeu certo, por varredura. Tinha
+shell — poderia ter rodado a busca. O `CLAUDE.md` foi lido *dentro* da varredura
+que existia para impedir: chegou tarde.
+
+Conclusão registrada no spec §7.3: o que separa os dois veículos é **quando o texto
+chega**, não o que ele diz. Onde não há carregamento prévio, o produto é a pasta
+fatiada + `INDEX.md` — e um pedido explícito ("use `biblio search` nessa pasta")
+devolve o protocolo inteiro.
+
+O ensaio cumpriu o que tinha para cumprir. Pode ser apagado.
 
 ## O que fazer com o resultado
 

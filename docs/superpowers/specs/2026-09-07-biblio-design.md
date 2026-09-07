@@ -432,10 +432,27 @@ recupera trocando de shell, mas gasta duas chamadas para descobrir algo que a sk
 já sabia ao se instalar. A skill é local à máquina e se reescreve a cada ingestão,
 então pode carregar caminho; o `CLAUDE.md` viaja e não pode.
 
-**Limitação declarada:** um ambiente que não carrega skills do Claude Code e no
-qual ninguém aponta a pasta — Cowork numa conversa qualquer, por exemplo — não tem
-veículo nenhum, e o agente responde do conhecimento geral ou vai para a web. Não há
-terceiro mecanismo: apontar a pasta é um gesto, e é o preço desse ambiente.
+**Limitação declarada, medida na Tarefa 0.0.** O que separa os dois veículos não é
+o texto, é **quando ele chega**. A skill entra em contexto antes da primeira ação e
+por isso molda a primeira ação. O `CLAUDE.md` só entra quando alguém lê a pasta — e
+num host que não o carrega sozinho, ele é lido *dentro* da varredura que existia
+para impedir.
+
+Observado: no Cowork, com a pasta apontada, o agente deu `cat` em todos os arquivos
+de uma vez, `CLAUDE.md` incluído. Tinha shell e poderia ter rodado `biblio search`;
+não foi falta de capacidade, foi ordem de chegada.
+
+Daí:
+
+| Host | O que o usuário tem |
+|---|---|
+| Claude Code | O protocolo inteiro, sem apontar nada |
+| Host sem carregamento prévio (Cowork, Desktop, ChatGPT) | A pasta fatiada e o `INDEX.md`. Um pedido explícito — "use `biblio search` nessa pasta" — devolve o protocolo, porque aí a instrução chega antes |
+
+Não há terceiro mecanismo a construir: nenhuma redação vence a ordem de chegada. O
+que o projeto faz a respeito é assumir o modo degradado e servi-lo bem — o
+`INDEX.md` diz, no próprio cabeçalho, o que fazer quando `biblio search` não está
+ao alcance (§5.2).
 
 **A skill é instalada automaticamente** — pelo `biblio shortcut` e na primeira
 ingestão bem-sucedida, sobrescrevendo a versão anterior. Instalação manual de
