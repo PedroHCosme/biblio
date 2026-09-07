@@ -29,9 +29,12 @@ def _procedencia(dados: dict) -> str:
 
 
 def _bloco(pasta: Path, dados: dict) -> str:
+    resumo = dados.get("resumo")
+    if not resumo or resumo == "pendente":  # "pendente" e o placeholder de meta.novo
+        resumo = "sem resumo"
     linhas = [
         f"## {pasta.name}",
-        f"{dados.get('resumo') or 'sem resumo'} {_procedencia(dados)}.",
+        f"{resumo} {_procedencia(dados)}.",
     ]
     if dados.get("falhou"):
         linhas.append(f"**FALHOU:** {dados['falhou']}")
