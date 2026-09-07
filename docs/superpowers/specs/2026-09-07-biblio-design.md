@@ -81,6 +81,9 @@ Classifica **por página, não por documento.** Uma norma de 600 páginas pode t
 Heurística: PyMuPDF extrai texto da página; se a densidade de caracteres passa de
 um limiar, a página é nativa, senão vai para OCR. Determinístico, ~2s por documento.
 
+Valor inicial do limiar: **200 caracteres extraídos por página**. É um chute a
+calibrar (risco #3), mas fica explícito para que a implementação não invente o seu.
+
 Saída: plano de rota `{doc, paginas_nativas: [...], paginas_ocr: [...]}`.
 
 ### 4.2 `convert.py` — dois conversores, uma flag
@@ -102,9 +105,13 @@ Regex e heurística. **Nenhum LLM nesta etapa** (ver Fora de escopo).
 
 ### 4.4 `slice.py` — fatia por heading, com piso e teto
 
-- **Piso:** seção de poucas linhas gruda na próxima, para não gerar centenas de
-  arquivos inúteis.
-- **Teto:** seção grande sem sub-heading quebra por parágrafo, com sufixo `-a`, `-b`.
+- **Piso: 400 caracteres.** Seção menor que isso gruda na próxima, para não gerar
+  centenas de arquivos inúteis.
+- **Teto: 8.000 caracteres.** Seção maior sem sub-heading quebra em limite de
+  parágrafo, com sufixo `-a`, `-b`.
+
+Ambos são valores iniciais a calibrar, mas ficam fixados aqui para que a
+implementação não escolha os seus.
 - Cada arquivo sai com frontmatter YAML.
 
 ### 4.5 `summarize.py` — modelo aberto trabalha aqui
@@ -203,6 +210,11 @@ Flags: `--top N` · `--doc <nome>` (restringe a um documento) · `--json`.
 Vetorial e FTS5 rodam em paralelo; resultados são unidos e deduplicados por
 arquivo. FTS5 já vem embutido no SQLite, então o custo de dependência é zero.
 
+A fusão é por **Reciprocal Rank Fusion**: cada resultado vale `1/(60 + posição)`
+na sua própria lista, e os dois valores somam. RRF dispensa normalizar scores de
+escalas incomparáveis (cosseno contra BM25) — são poucas linhas e evita o erro
+clássico de somar números que não são da mesma grandeza.
+
 ## 7. Interfaces
 
 ### 7.1 CLI — o motor
@@ -280,5 +292,5 @@ Cinco testes, não uma suíte. Não se testa wrapper de biblioteca de terceiro.
 | 3 | Limiar de densidade de caracteres da triagem. | Calibrar com PDFs reais do acervo; valor inicial é chute. |
 | 4 | Limiar de qualidade de OCR (~70% de palavras reconhecíveis). | Chute inicial; ajustar com dado real. |
 | 5 | Tamanho de chunk para embedding (~500 tokens). | Chute inicial; validar com o teste 4. |
-| 6 | Onde a biblioteca mora por padrão — pasta fixa global ou uma por projeto? | A decidir na escrita do plano. |
+| 6 | ~~Onde a biblioteca mora por padrão?~~ | **Resolvido:** padrão global em `~/biblio/`, sobrescrito por `--out`. O atalho da área de trabalho sobe a GUI sem diretório de trabalho útil, então um padrão global é obrigatório. |
 | 7 | Sincronização entre as duas máquinas. | **Fora de escopo.** Cada máquina tem a sua biblioteca; se necessário depois, é problema de pasta sincronizada, não da ferramenta. |
