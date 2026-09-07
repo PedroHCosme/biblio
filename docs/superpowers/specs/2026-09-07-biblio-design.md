@@ -235,11 +235,15 @@ Ele existe porque a skill (§7.3) não cobre tudo: a skill vive na máquina, o
 aberta pelo Claude Desktop, pelo Cowork ou pelo ChatGPT — que não carregam skills
 do Claude Code — é este arquivo que ensina.
 
-O protocolo é o mesmo da skill num ponto só diferente: **o `CLAUDE.md` traz
-`--lib` da própria pasta preenchido**. Apontar o Claude para uma pasta passa a
-significar "consulte esta biblioteca", não "consulte tudo que existe nesta
-máquina" (§6.0). O caminho é gravado na geração; se a pasta for movida ou
-copiada, `biblio --out . index` de dentro dela reescreve o arquivo.
+O protocolo é o mesmo da skill num ponto só diferente: **o `CLAUDE.md` usa `--lib`**.
+Apontar o Claude para uma pasta passa a significar "consulte esta biblioteca", não
+"consulte tudo que existe nesta máquina" (§6.0).
+
+**Sem nenhum caminho absoluto dentro dele.** O arquivo diz ao agente para passar o
+caminho *desta pasta* — a mesma de onde ele acabou de ler o arquivo. Gravar o
+caminho na geração amarraria a pasta à máquina que a criou: copiá-la ou movê-la
+quebraria a busca, e quebraria em silêncio. O agente sempre sabe de onde leu; a
+ferramenta, não.
 
 Custo em contexto: **zero**, a menos que alguém aponte para a pasta. E quando
 aponta, ~600 tokens uma vez, que evitam a leitura de uma biblioteca inteira. Não
@@ -306,10 +310,18 @@ A pasta copiada leva o `.biblio.db` dentro (§5), então `--lib` funciona nela s
 registro nenhum — o registro serve para a busca global, não para a restrita. O que
 a outra máquina precisa é do `biblio` instalado.
 
-Para que a cópia entre também na busca global daquela máquina, `biblio --out <pasta>
-index` registra a pasta, reescreve o `CLAUDE.md` com o caminho novo e atualiza a
-descrição da skill. **Não reprocessa nada** — lê os `_meta.yaml` que já vieram
-junto. É o mesmo comando que conserta uma biblioteca movida de lugar.
+**Nada a consertar depois de copiar.** A pasta não sabe onde está: o `CLAUDE.md`
+não guarda caminho, e o `biblio.db` guarda `doc`/`arquivo`, nunca caminho absoluto.
+Copiar, mover ou renomear a pasta-mãe não quebra nada.
+
+E **usar uma biblioteca uma vez já a registra** naquela máquina: a primeira busca
+com `--lib` numa pasta válida a põe no `~/.biblio/bibliotecas.txt`, de onde ela
+passa a aparecer na busca global, em `biblio libs` e na descrição da skill. Não há
+comando de importação porque não faz falta um.
+
+`--lib` aceita **caminho ou nome**. O `CLAUDE.md` manda o agente passar o caminho,
+que muda de máquina para máquina; um humano no terminal passa o nome, que é o que
+ele lê em `biblio libs` e que não muda nunca.
 
 O que viaja e o que não viaja:
 
@@ -339,8 +351,8 @@ clássico de somar números que não são da mesma grandeza.
 ```
 biblio add <arquivo|pasta>  [--out biblioteca/] [--device auto] [--force]
 biblio search "<query>"     [--top 5] [--doc X] [--lib CAMINHO] [--json]
-biblio index                    # regera INDEX.md e CLAUDE.md, registra a pasta,
-                                # atualiza a skill — sem reprocessar documento
+biblio index                    # regera INDEX.md e CLAUDE.md e atualiza a skill,
+                                # sem reprocessar documento
 biblio status                   # o que entrou, o que falhou, o que está pendente
 biblio libs                     # bibliotecas registradas
 biblio gui                      # sobe o Gradio em localhost
@@ -450,6 +462,10 @@ Sem Docker, sem serviço, sem porta fixa.
 sem dependência nova. O alvo do atalho é `pythonw.exe`, não `python.exe` — senão
 o atalho abre um console preto junto da GUI.
 
+O atalho é a única parte presa ao Windows. Fora dele, `biblio shortcut` instala a
+skill, avisa e não cria atalho; a GUI se abre por `biblio gui`. O resto — as pastas,
+o SQLite, a busca, o ensino do agente — não sabe em que sistema está rodando.
+
 ## 9. Tratamento de erros
 
 | Falha | Comportamento |
@@ -458,7 +474,7 @@ o atalho abre um console preto junto da GUI.
 | OCR de baixa qualidade | Marca `qualidade=baixa` no meta e **avisa no `INDEX.md`**. O usuário precisa saber que o documento é ruim antes de confiar nele. |
 | Ollama indisponível no meio do lote | Pula o resumo, marca `pendente`, continua. `biblio index` regera depois. |
 | Interrupção (Ctrl+C) | Estado gravado por etapa; retomar é rodar de novo (coberto pela idempotência). |
-| `--lib` numa pasta que não é biblioteca | **Erro, não silêncio.** Caso típico: cópia com o caminho velho no `CLAUDE.md`. A mensagem dá o comando que conserta (`biblio --out <pasta> index`). Zero resultados sem causa faria o agente concluir que o acervo não sabe a resposta |
+| `--lib` numa pasta que não é biblioteca | **Erro, não silêncio.** Zero resultados sem causa faria o agente concluir que o acervo não sabe a resposta |
 | Biblioteca indexada com outro modelo de embedding | **Erro ao abrir o banco.** Vetor de um modelo comparado com vetor de outro não é resultado ruim, é ruído — e sai com a mesma cara de um bom. Reindexar é barato; resposta errada de norma técnica não é |
 
 Essa coluna é o que separa "processei 200 PDFs" de "processei 12 e crashou".
