@@ -7,6 +7,11 @@ Nos comandos abaixo, `--lib` recebe **o caminho desta pasta** — a mesma de ond
 voce leu este arquivo. O nome dela tambem serve, se ja for conhecida desta maquina
 (`biblio libs`). Usar uma pasta uma vez ja a torna conhecida.
 
+Se `biblio` der "command not found", o executavel existe mas nao esta no PATH
+deste shell. Tente por outro shell (no Windows, PowerShell) antes de concluir que
+a ferramenta nao esta instalada — e **nao** caia em ler a pasta por varredura, nem
+em buscar na web: a resposta esta aqui dentro.
+
 ## Protocolo
 
 **1. Comece pela busca, sempre.**
@@ -28,9 +33,13 @@ C:\\Users\\...\\biblio\\nbr-6118\\09-ancoragem.md:1-84  0.032  9.4 Comprimento d
 
 **2. Leia so o que a busca devolveu, com `offset` e `limit`.**
 
-Para `...09-ancoragem.md:1-84`, use `Read` com `offset=1` e `limit=84`. Nao leia o
-arquivo inteiro, nao leia os vizinhos "por garantia". Se as 84 linhas nao
-responderem, busque de novo com outros termos.
+Para `...09-ancoragem.md:112-195`, use `Read` com `offset=112` e `limit=84`.
+
+**`limit` e a quantidade de linhas — `fim - inicio + 1` — nao a linha final.**
+Para `:19-36`, e `offset=19` e `limit=18`.
+
+Nao arredonde o intervalo, nao leia o arquivo inteiro, nao leia os vizinhos "por
+garantia". Se as linhas devolvidas nao responderem, busque de novo com outros termos.
 
 **3. Busca vazia? Va para os termos do indice.**
 

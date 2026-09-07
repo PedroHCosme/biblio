@@ -40,9 +40,29 @@ Observe sem ajudar:
 | Leu o `INDEX.md` inteiro? | não |
 | Respondeu **1,35**? | sim |
 
-Depois repita numa sessão nova apontando `ensaio/acervo-tecnico/` e veja se ele
-usa `--lib`. Se você usa Cowork, faça o mesmo teste lá: é o `CLAUDE.md` da pasta
-que precisa funcionar sozinho, sem skill instalada.
+## Resultado da rodada 1 (2026-09-07)
+
+**Claude Code, nada apontado: passou.** Skill disparou sozinha, buscou, leu,
+respondeu **1,35**. Dois defeitos, os dois corrigidos nos arquivos acima:
+
+1. `biblio: command not found` na primeira chamada — o shell POSIX do Claude Code
+   recebe o PATH do Windows como uma entrada só. Corrigido: a skill agora chama
+   pelo caminho absoluto.
+2. Leu 1-40 em vez de 19-36 — o exemplo do protocolo usava `:1-84`, onde `limit`
+   coincide com a linha final, e ensinava a aritmética errada. Corrigido.
+
+**Cowork, nada apontado: foi para a web.** Previsto (não carrega skill, e o
+`CLAUDE.md` só entra quando alguém aponta a pasta), mas fica registrado como
+limitação declarada.
+
+## Rodada 2 — o que falta
+
+Duas sessões novas, com as correções já no lugar:
+
+1. **Claude Code**, nada apontado, mesma pergunta. Esperado: **uma** chamada de
+   busca (sem `command not found`) e `Read` com `offset=19, limit=18`.
+2. **Cowork**, agora **apontando** `ensaio/acervo-tecnico/`. É o teste do veículo 2,
+   e decide se lá o produto é o protocolo inteiro ou só a pasta fatiada com índice.
 
 ## O que fazer com o resultado
 

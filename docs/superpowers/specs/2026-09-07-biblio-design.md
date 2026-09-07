@@ -419,10 +419,23 @@ Dois veículos, porque nenhum cobre tudo:
 | Skill `biblioteca` | `~/.claude/skills/` | Claude Code, sem o usuário apontar nada | Nome e descrição sempre; o corpo quando o agente decide consultar |
 | `CLAUDE.md` da biblioteca | dentro da pasta | Pasta copiada para outra máquina; Claude Desktop, Cowork, ChatGPT; **um projeto que quer só esta biblioteca** | Só quando alguém aponta para a pasta |
 
-Os dois veículos diferem num campo: a skill busca em todas as bibliotecas
-registradas, o `CLAUDE.md` traz o `--lib` da pasta em que vive. Daí o segundo
-veículo não ser redundante com o primeiro nem na máquina do próprio usuário —
-é ele que dá escopo (§6.0).
+Os dois veículos diferem em dois campos: a skill busca em todas as bibliotecas
+registradas e chama o executável **pelo caminho absoluto**; o `CLAUDE.md` traz o
+`--lib` da pasta em que vive e diz só `biblio`. Daí o segundo veículo não ser
+redundante com o primeiro nem na máquina do próprio usuário — é ele que dá
+escopo (§6.0).
+
+O caminho absoluto na skill não é preciosismo: medido na Tarefa 0.0, o shell POSIX
+do Claude Code no Windows recebe todo o `PATH` do sistema como **uma única
+entrada**, e `biblio` sozinho dá `command not found` mesmo instalado. O agente se
+recupera trocando de shell, mas gasta duas chamadas para descobrir algo que a skill
+já sabia ao se instalar. A skill é local à máquina e se reescreve a cada ingestão,
+então pode carregar caminho; o `CLAUDE.md` viaja e não pode.
+
+**Limitação declarada:** um ambiente que não carrega skills do Claude Code e no
+qual ninguém aponta a pasta — Cowork numa conversa qualquer, por exemplo — não tem
+veículo nenhum, e o agente responde do conhecimento geral ou vai para a web. Não há
+terceiro mecanismo: apontar a pasta é um gesto, e é o preço desse ambiente.
 
 **A skill é instalada automaticamente** — pelo `biblio shortcut` e na primeira
 ingestão bem-sucedida, sobrescrevendo a versão anterior. Instalação manual de
