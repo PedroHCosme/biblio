@@ -234,6 +234,12 @@ Ele existe porque a skill (§7.3) não cobre tudo: a skill vive na máquina, o
 aberta pelo Claude Desktop, pelo Cowork ou pelo ChatGPT — que não carregam skills
 do Claude Code — é este arquivo que ensina.
 
+O protocolo é o mesmo da skill num ponto só diferente: **o `CLAUDE.md` traz
+`--lib` da própria pasta preenchido**. Apontar o Claude para uma pasta passa a
+significar "consulte esta biblioteca", não "consulte tudo que existe nesta
+máquina" (§6.0). O caminho é gravado na geração; se a pasta for movida ou
+copiada, `biblio --out . index` de dentro dela reescreve o arquivo.
+
 Custo em contexto: **zero**, a menos que alguém aponte para a pasta. E quando
 aponta, ~250 tokens uma vez, que evitam a leitura de uma biblioteca inteira.
 
@@ -278,6 +284,24 @@ milissegundos.
 A fusão RRF (§6.1) já é a ferramenta certa para unir listas de origens
 incomparáveis, então N bibliotecas × 2 buscas são 2N listas no mesmo mecanismo.
 Nenhuma matemática nova.
+
+**Uma biblioteca por projeto.** Buscar em todas é o padrão porque o agente
+normalmente não sabe onde está a resposta. Mas quando o usuário sabe — o projeto
+é de controle digital e o acervo de álgebra linear só faria ruído — há dois
+caminhos, e os dois funcionam sem nenhum comando novo:
+
+| Como | O que acontece |
+|---|---|
+| Copiar a pasta da biblioteca para dentro do projeto | O Claude Code lê o `CLAUDE.md` dela junto com os do projeto e passa a usar `--lib` daquela pasta |
+| Apontar o caminho da pasta para o agente | Idem, sem duplicar arquivos |
+
+Apontar é melhor que copiar: uma biblioteca é a mesma em todo projeto e cópias
+divergem quando uma delas recebe um documento novo. Copiar existe para o caso de
+outra máquina, ou de a pasta viajar junto com um repositório.
+
+A pasta copiada leva o `.biblio.db` dentro (§5), então `--lib` funciona nela sem
+registro nenhum — o registro serve para a busca global, não para a restrita. O que
+a outra máquina precisa é do `biblio` instalado.
 
 ### 6.1 Busca híbrida
 
@@ -359,7 +383,12 @@ Dois veículos, porque nenhum cobre tudo:
 | Veículo | Onde vive | Cobre | Quando entra em contexto |
 |---|---|---|---|
 | Skill `biblioteca` | `~/.claude/skills/` | Claude Code, sem o usuário apontar nada | Nome e descrição sempre; o corpo quando o agente decide consultar |
-| `CLAUDE.md` da biblioteca | dentro da pasta | Pasta copiada para outra máquina; Claude Desktop, Cowork, ChatGPT | Só quando alguém aponta para a pasta |
+| `CLAUDE.md` da biblioteca | dentro da pasta | Pasta copiada para outra máquina; Claude Desktop, Cowork, ChatGPT; **um projeto que quer só esta biblioteca** | Só quando alguém aponta para a pasta |
+
+Os dois veículos diferem num campo: a skill busca em todas as bibliotecas
+registradas, o `CLAUDE.md` traz o `--lib` da pasta em que vive. Daí o segundo
+veículo não ser redundante com o primeiro nem na máquina do próprio usuário —
+é ele que dá escopo (§6.0).
 
 **A skill é instalada automaticamente** — pelo `biblio shortcut` e na primeira
 ingestão bem-sucedida, sobrescrevendo a versão anterior. Instalação manual de
