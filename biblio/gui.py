@@ -22,6 +22,7 @@ def _exemplo_de_busca(biblioteca: Path) -> str:
 
 def _processar(arquivos, pasta, destino, resumir, forcar):
     # gr.File com type padrao ("filepath") ja entrega str no Gradio >= 4, nao objeto
+    pasta = (pasta or "").strip().strip('"')  # "Copiar como caminho" do Windows poe aspas
     alvos = list(arquivos or []) + ([pasta] if pasta else [])
     if not alvos:
         yield "Escolha arquivos (.pdf, .md, .txt) ou informe uma pasta."
@@ -79,11 +80,14 @@ def subir(saida=None, share: bool = False) -> None:
         )
         arquivos = gr.File(label="Arquivos", file_count="multiple",
                            file_types=[".pdf", ".md", ".txt"])
-        # Navegador nao entrega caminho de pasta por upload; o FileExplorer navega o
-        # disco do lado do servidor, que aqui e a propria maquina do usuario.
-        pasta = gr.FileExplorer(label="ou escolha uma pasta inteira",
-                                root_dir=str(Path.home()), glob="**/",
-                                file_count="single", height=220)
+        # O navegador nao entrega caminho de pasta por upload, e o FileExplorer do
+        # Gradio 6 nao deixa selecionar um diretorio inteiro com um clique. Como o
+        # servidor roda na propria maquina do usuario, um campo de texto com o
+        # caminho da pasta e o que funciona (Task 4.3: campo de texto > seletor que nao abre).
+        pasta = gr.Textbox(
+            label="ou cole o caminho de uma pasta inteira",
+            placeholder=r"C:\Users\voce\Documentos\normas",
+            info="Processa todos os .pdf, .md e .txt da pasta e subpastas.")
         with gr.Row():
             resumir = gr.Checkbox(
                 value=True,
