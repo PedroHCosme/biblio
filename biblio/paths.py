@@ -24,3 +24,44 @@ def raiz(saida: Path | str | None = None) -> Path:
         return BIBLIOTECA_PADRAO
     texto = str(saida)
     return RAIZ / slug(texto) if Path(texto).parent == Path(".") else Path(texto)
+
+
+REGISTRO = Path.home() / ".biblio" / "bibliotecas.txt"
+
+
+def registrar(biblioteca: Path) -> None:
+    """Move a biblioteca para o topo da lista. ponytail: um txt, nao um banco."""
+    caminho = str(biblioteca.resolve())
+    conhecidas = [c for c in conhecidas_biblioteca() if c != caminho]
+    REGISTRO.parent.mkdir(parents=True, exist_ok=True)
+    REGISTRO.write_text("\n".join([caminho, *conhecidas]) + "\n", encoding="utf-8")
+
+
+def conhecidas_biblioteca() -> list[str]:
+    """Mais recente primeiro. Some da lista o que foi apagado do disco."""
+    if not REGISTRO.exists():
+        return []
+    return [linha for linha in REGISTRO.read_text(encoding="utf-8").splitlines()
+            if linha.strip() and Path(linha).is_dir()]
+
+
+def todas(saida=None) -> list[Path]:
+    """Bibliotecas a consultar: a(s) pedida(s), ou todas as registradas, ou so a padrao.
+
+    A pedida vem como caminho **ou** como nome de biblioteca conhecida: o CLAUDE.md
+    de uma pasta manda o caminho dela (que muda de maquina para maquina), e um humano
+    no terminal manda o nome, que e o que ele ve em `biblio libs`.
+
+    Aceita lista para que teste consulte bibliotecas proprias sem tocar no registro real.
+    """
+    if isinstance(saida, (list, tuple)):
+        return [Path(c) for c in saida]
+    if saida:
+        pedido = Path(saida)
+        if pedido.is_dir():
+            return [pedido]
+        # nome: devolve o caminho conhecido; nao achou, devolve o pedido mesmo,
+        # para quem chamou poder errar dizendo o que foi pedido
+        conhecido = [c for c in conhecidas_biblioteca() if Path(c).name == str(saida)]
+        return [Path(conhecido[0])] if conhecido else [pedido]
+    return [Path(c) for c in conhecidas_biblioteca()] or [BIBLIOTECA_PADRAO]
