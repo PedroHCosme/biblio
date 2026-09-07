@@ -1,4 +1,5 @@
 """adicionar(): a unica porta de entrada. CLI e GUI sao cascas sobre ela."""
+import re
 from pathlib import Path
 
 import yaml
@@ -28,11 +29,33 @@ def _frontmatter(fatia, doc: str) -> str:
     return "---\n" + yaml.safe_dump(campos, allow_unicode=True, sort_keys=False) + "---\n\n"
 
 
+_FRONTMATTER_FONTE = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n", re.S)
+
+
+def _sem_frontmatter_de_fonte(texto: str) -> str:
+    """Vault do Obsidian: todo .md ja vem com frontmatter YAML proprio. Sem tirar,
+    ele empilha com o frontmatter do biblio e vira prosa YAML indexada. `aliases` e
+    `tags` sao sinonimos deliberados do autor, entao viram uma linha visivel e
+    pesquisavel em vez de sumir.
+    """
+    m = _FRONTMATTER_FONTE.match(texto)
+    if not m:
+        return texto
+    try:
+        dados = yaml.safe_load(m.group(1)) or {}
+    except yaml.YAMLError:
+        dados = {}
+    termos = dados.get("aliases", []) + dados.get("tags", []) if isinstance(dados, dict) else []
+    linha = f"*{', '.join(map(str, termos))}*\n\n" if termos else ""
+    return linha + texto[m.end():]
+
+
 def _obter_texto(caminho: Path, device: str, avisar, nome: str) -> tuple[str, dict]:
     """(markdown bruto, rota). Entrada que ja e texto pula triagem e conversao."""
     if caminho.suffix.lower() != ".pdf":
         avisar(f"{nome}: ja e texto, pulando conversao")
-        return caminho.read_text(encoding="utf-8", errors="replace"), {}
+        bruto = caminho.read_text(encoding="utf-8", errors="replace")
+        return _sem_frontmatter_de_fonte(bruto), {}
     avisar(f"{nome}: triando")
     rota = triar(caminho)
     avisar(f"{nome}: convertendo {sum(len(v) for v in rota.values())} paginas")
