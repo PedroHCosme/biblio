@@ -1,0 +1,30 @@
+[project]
+name = "biblio"
+version = "0.1.0"
+description = "Camada de memória documental para agentes"
+requires-python = ">=3.11"
+dependencies = [
+    "pymupdf>=1.24",
+    "pymupdf4llm>=0.0.17",
+    "docling>=2.0",
+    "sentence-transformers>=3.0",
+    "numpy>=1.26",
+    "pyyaml>=6.0",
+    "gradio>=4.44",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+biblio = "biblio.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["biblio*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
