@@ -1,0 +1,62 @@
+# Ensaio do protocolo (Tarefa 0.0)
+
+Testa a premissa que carrega o projeto inteiro, **antes** de escrever qualquer
+código dele: *um agente que ninguém instruiu prefere `biblio search` a ler a pasta?*
+
+Nada aqui é reaproveitado. É ensaio, e é para jogar fora.
+
+## O que está instalado agora
+
+| Onde | O quê |
+|---|---|
+| `~/.claude/skills/biblioteca/SKILL.md` | A skill de verdade, copiada à mão da Tarefa 2.4 |
+| `~/bin/biblio.cmd` | `biblio` **de mentira**: ignora a consulta e imprime três ponteiros fixos |
+| `ensaio/acervo-tecnico/` | Quatro fatias, `INDEX.md` e `CLAUDE.md` de uma norma inventada |
+
+## O truque do ensaio
+
+A norma NI-4471 **não existe**. O fator de correção para peça concretada em
+posição invertida (**1,35**, e **1,50** para barra acima de 25 mm) não está em
+lugar nenhum do mundo além de `03-ancoragem.md`.
+
+Então a resposta é uma prova: quem acerta o número, leu o arquivo. Quem responde
+de cabeça, erra ou diz que não sabe — e a premissa caiu.
+
+## Como rodar
+
+Abra um Claude Code **novo**, numa pasta **qualquer** que não seja esta, sem
+apontar nada, e pergunte:
+
+> Qual o fator de correção do comprimento de ancoragem para peças pré-moldadas
+> concretadas em posição invertida?
+
+Observe sem ajudar:
+
+| O que observar | Resposta boa |
+|---|---|
+| Chamou `biblio search`? | sim, por conta própria |
+| Chamou **antes** de tentar `Glob`/`Grep`/`Read`? | sim |
+| Leu só o intervalo devolvido? | `Read` com `offset`/`limit`, não o arquivo inteiro |
+| Leu o `INDEX.md` inteiro? | não |
+| Respondeu **1,35**? | sim |
+
+Depois repita numa sessão nova apontando `ensaio/acervo-tecnico/` e veja se ele
+usa `--lib`. Se você usa Cowork, faça o mesmo teste lá: é o `CLAUDE.md` da pasta
+que precisa funcionar sozinho, sem skill instalada.
+
+## O que fazer com o resultado
+
+| Resultado | Decisão |
+|---|---|
+| Buscou sozinho e leu só o intervalo | Premissa de pé. Segue para a Tarefa 0.1 |
+| Buscou mas leu o arquivo inteiro | O passo 2 do protocolo está frouxo. Reescrever **antes** da Tarefa 2.4 |
+| Não buscou | **Parar.** A `description` não ganha a decisão. Testar outras redações aqui, no barato |
+| Buscou e se confundiu com os ponteiros | Ajustar o formato da spec §6 — texto, não código |
+
+## Desinstalar
+
+Antes da Fase 1, obrigatoriamente — o `biblio` falso sombreia o de verdade:
+
+```bash
+rm ~/bin/biblio.cmd && rm -r ~/.claude/skills/biblioteca && rm -r ensaio
+```
