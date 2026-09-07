@@ -354,6 +354,7 @@ biblio add <arquivo|pasta>  [--out biblioteca/] [--device auto] [--force]
 biblio search "<query>"     [--top 5] [--doc X] [--lib CAMINHO] [--json]
 biblio index                    # regera INDEX.md e CLAUDE.md e atualiza a skill,
                                 # sem reprocessar documento
+# --out e --lib aceitam nome ou caminho: `--out direito` = ~/biblio/direito
 biblio status                   # o que entrou, o que falhou, o que está pendente
 biblio libs                     # bibliotecas registradas
 biblio gui                      # sobe o Gradio em localhost
