@@ -9,9 +9,10 @@ autor: Pedro Cosme
 
 ## 1. Problema
 
-Acervo pessoal grande de PDFs técnicos (normas, datasheets, livros, papers), muitos
-deles com centenas de páginas, mistura de texto nativo e páginas digitalizadas,
-em português e inglês.
+Acervo pessoal grande de documentos técnicos (normas, datasheets, livros, papers),
+muitos deles com centenas de páginas, em português e inglês. A maior parte é PDF,
+mistura de texto nativo e páginas digitalizadas; parte já foi convertida para
+Markdown por outra ferramenta, ou já nasceu em Markdown ou texto puro.
 
 Duas dores concretas:
 
@@ -40,11 +41,17 @@ Consequência de desenho: o produto **não é um conversor**. Conversão PDF→M
 resolvida por Docling, Marker, MinerU, PyMuPDF4LLM, markitdown, Unstructured.
 O produto é a **camada de memória** construída em cima dessas ferramentas.
 
+A prova: um `.md` já convertido entra na ferramenta e sai valendo mais. Se o
+produto fosse conversão, essa entrada seria um no-op.
+
 ## 3. Decisões
 
 | Decisão | Escolha | Razão |
 |---|---|---|
 | Consumidor primário | Claude Code (agente com filesystem) | Já tem Read/Grep/Glob; a saída em arquivos serve os outros apps de graça |
+| Formatos de entrada | `.pdf`, `.md`, `.txt` | Um `.md` já convertido tem os mesmos defeitos de um recém-convertido: cabeçalho repetido, hierarquia torta e, sobretudo, **arquivo único gigante**. Ele pula as duas primeiras etapas e ganha as outras quatro. Que a ferramenta agregue valor a um `.md` de entrada é a prova de que o valor nunca esteve na conversão |
+| Ensino do agente | Skill instalada automaticamente + `CLAUDE.md` gerado dentro da biblioteca | O usuário não deve precisar ensinar nada. Os dois mecanismos cobrem casos diferentes (§7.3) |
+| Várias bibliotecas | Registro de caminhos; a busca cobre todas | O usuário vai criar mais de uma ao longo do tempo (normas, papers). Se a busca só olhasse a padrão, a segunda biblioteca falharia em silêncio |
 | Formato de saída | Pasta de Markdown fatiado + índice + SQLite | Uma pasta de arquivos é comida para Claude Code, Desktop, Cowork e ChatGPT. Um servidor MCP atenderia dois e custaria dez vezes mais |
 | Motor vs interface | **CLI é o motor, GUI é casca** | O agente precisa de `biblio search` no shell. Se a GUI virar a única porta, a integração com o agente morre |
 | Stack | Python + CLI + Gradio + SQLite | Docling e sentence-transformers são Python; SQLite é um arquivo que viaja com a pasta; Gradio dá drag-drop e progresso de graça |
@@ -59,7 +66,11 @@ O produto é a **camada de memória** construída em cima dessas ferramentas.
 - **Servidor MCP.** Os arquivos já servem os quatro apps.
 - **Login, contas, multi-tenant, nuvem, Docker.** Dois usuários não justificam.
 - **LLM na normalização do texto.** Modelo reescrevendo texto extraído alucina e
-  produz documento sutilmente errado — pior que o problema original.
+  produz documento sutilmente errado — pior que o problema original. Numa norma
+  técnica, um número trocado que *parece* plausível é pior que um trecho
+  visivelmente truncado. Isto resolve a ambiguidade de "melhorar um `.md`":
+  **melhorar significa deixar utilizável pelo agente** — limpar, fatiar, indexar,
+  buscar. Nunca reescrever o conteúdo.
 - **Busca e leitura dentro da GUI.** A GUI é painel de ingestão. Busca e leitura
   acontecem no agente ou no editor.
 - **Chat/RAG dentro da GUI.**
@@ -67,11 +78,23 @@ O produto é a **camada de memória** construída em cima dessas ferramentas.
 ## 4. Arquitetura
 
 ```
-PDF → [triar] → [converter] → [normalizar] → [fatiar] → [resumir] → [indexar vetor] → biblioteca/
+PDF ────→ [triar] → [converter] ─┐
+                                 ├─→ [normalizar] → [fatiar] → [resumir] → [indexar vetor] → biblioteca/
+MD, TXT ─────────────────────────┘
 ```
 
 Seis módulos, cada um com entrada e saída em disco. **Cada etapa grava seu
 resultado**, então falha na etapa 5 não força reprocessar OCR de 600 páginas.
+
+Entrada que já é texto pula as duas primeiras etapas e entra direto na
+normalização. É o mesmo pipeline, dois passos mais curto — nenhum caminho
+paralelo, nenhuma lógica duplicada.
+
+**Degradação declarada do `.txt`:** sem headings, o fatiamento não tem em que se
+apoiar. O arquivo é cortado por tamanho e os nomes de seção saem sem significado.
+A busca continua exata (os ponteiros de linha independem de estrutura), mas a
+árvore de seções no `INDEX.md` não ajuda. `.txt` entra funcionando e degradado;
+`.md` entra em pé de igualdade com PDF.
 
 ### 4.1 `triage.py` — decide o caminho barato
 
@@ -114,6 +137,10 @@ Ambos são valores iniciais a calibrar, mas ficam fixados aqui para que a
 implementação não escolha os seus.
 - Cada arquivo sai com frontmatter YAML.
 
+**Documento sem heading nenhum** (o caso típico do `.txt`): cada pedaço do teto
+vira uma fatia própria, numerada, em vez de sufixo alfabético. Sufixo `-a`…`-z`
+acaba em 26; um livro em `.txt` passa disso.
+
 ### 4.5 `summarize.py` — modelo aberto trabalha aqui
 
 Um resumo **por documento**, não por chunk. Gera `_resumo.md` e o bloco do
@@ -144,6 +171,7 @@ inutilizável na segunda execução.
 
 ```
 biblioteca/
+  CLAUDE.md                             ← ensina o protocolo a quem abrir a pasta
   INDEX.md
   biblio.db                             ← sqlite-vec + FTS5
   nbr-6118-2023-projeto-concreto/
@@ -153,8 +181,12 @@ biblioteca/
     ...
 ```
 
-O PDF original **não é copiado**. `_meta.yaml` guarda caminho absoluto e hash;
-copiar duplicaria gigabytes.
+O original **não é copiado**, seja PDF ou Markdown. `_meta.yaml` guarda caminho
+absoluto e hash; copiar duplicaria gigabytes e criaria duas verdades.
+
+A pasta é autocontida: o `.db` mora dentro dela, então copiá-la para outra
+máquina funciona. O que não viaja é o executável — `biblio search` exige o
+`pip install` na máquina de destino.
 
 ### 5.1 Frontmatter de cada fatia
 
@@ -169,6 +201,10 @@ pai: 09-aderencia-e-ancoragem.md
 
 Custa ~30 tokens e paga sozinho: quando a busca leva o agente a um arquivo solto,
 ele sabe a procedência **sem uma segunda leitura**.
+
+`paginas` **é omitido** quando a origem não tem páginas (`.md`, `.txt`). Campo
+ausente é honesto; `paginas: [1, 1]` seria mentira, e mentira em metadado de
+procedência é pior que silêncio.
 
 ### 5.2 `INDEX.md` — projetado para grep, não para leitura
 
@@ -187,23 +223,61 @@ linha só, para `grep -A4` devolver o bloco fechado.
 A linha **Termos** é a rede de segurança: é o que encontra "NBR 6118" quando o
 embedding falha.
 
+### 5.3 `CLAUDE.md` — a biblioteca se explica sozinha
+
+Gerado junto com o `INDEX.md`, ~250 tokens, ensinando o protocolo de consulta:
+buscar primeiro, ler só o intervalo devolvido, cair no `grep` dos termos quando a
+busca falhar, nunca ler o `INDEX.md` inteiro.
+
+Ele existe porque a skill (§7.3) não cobre tudo: a skill vive na máquina, o
+`CLAUDE.md` vive na pasta. Quando a biblioteca é copiada para a outra máquina, ou
+aberta pelo Claude Desktop, pelo Cowork ou pelo ChatGPT — que não carregam skills
+do Claude Code — é este arquivo que ensina.
+
+Custo em contexto: **zero**, a menos que alguém aponte para a pasta. E quando
+aponta, ~250 tokens uma vez, que evitam a leitura de uma biblioteca inteira.
+
 ## 6. Contrato da busca
 
 ```
-$ biblio search "comprimento de ancoragem" --top 5
+$ biblio search "comprimento de ancoragem" --top 3
 
-nbr-6118-2023.../09-4-comprimento-de-ancoragem.md:1-84   0.89  9.4.2 Comprimento de ancoragem
-nbr-6118-2023.../09-3-aderencia.md:12-60                 0.81  9.3 Aderência
-nbr-7480-aco.../04-requisitos.md:88-140                  0.74  4.3 Ensaio de aderência
+C:\Users\Usuario\biblio\nbr-6118-2023\09-4-comprimento-de-ancoragem.md:1-84  0.032  9.4.2 Comprimento de ancoragem
+C:\Users\Usuario\biblio\nbr-6118-2023\09-3-aderencia.md:12-60                0.028  9.3 Aderência
+C:\Users\Usuario\biblio\nbr-7480-aco\04-requisitos.md:88-140                 0.024  4.3 Ensaio de aderência
 ```
 
-**Caminho, linhas, score, heading. Nunca o corpo.** Saída de ~50 tokens. O agente
-decide o que abrir e usa `Read` com `offset`/`limit`.
+**Caminho, linhas, score, heading. Nunca o corpo.** ~30 tokens por linha; cinco
+resultados custam ~150. O agente decide o que abrir e usa `Read` com
+`offset`/`limit`.
+
+O caminho é **absoluto**. Com mais de uma biblioteca registrada, caminho relativo
+obrigaria o agente a resolver a raiz certa — um passo a mais e um ponto de falha,
+para economizar tokens que não são o gargalo.
 
 Esta inversão é o núcleo do projeto: **não se empurra contexto para o agente;
 ensina-se o agente a se servir.**
 
-Flags: `--top N` · `--doc <nome>` (restringe a um documento) · `--json`.
+Flags: `--top N` · `--doc <nome>` (restringe a um documento) · `--lib <caminho>`
+(restringe a uma biblioteca) · `--json`.
+
+### 6.0 Várias bibliotecas
+
+O usuário vai criar mais de uma ao longo do tempo — normas numa rodada, papers
+noutra. Nunca simultaneamente, mas as duas continuam existindo depois.
+
+Cada caminho de biblioteca é registrado em `~/.biblio/bibliotecas.txt`, uma linha
+por caminho absoluto. **`biblio search` cobre todas as registradas por padrão**, e
+`--lib` restringe.
+
+A alternativa — buscar só na biblioteca padrão — falharia em silêncio: o usuário
+ingere papers hoje e amanhã a busca não acha nada, sem dizer por quê. O custo de
+varrer todas é uma varredura de matriz por biblioteca, medida na fase 0 em
+milissegundos.
+
+A fusão RRF (§6.1) já é a ferramenta certa para unir listas de origens
+incomparáveis, então N bibliotecas × 2 buscas são 2N listas no mesmo mecanismo.
+Nenhuma matemática nova.
 
 ### 6.1 Busca híbrida
 
@@ -220,39 +294,99 @@ clássico de somar números que não são da mesma grandeza.
 ### 7.1 CLI — o motor
 
 ```
-biblio add <pdf|pasta>  [--out biblioteca/] [--device auto] [--force]
-biblio search "<query>" [--top 5] [--doc X] [--json]
-biblio index                    # regera INDEX.md sem reprocessar
+biblio add <arquivo|pasta>  [--out biblioteca/] [--device auto] [--force]
+biblio search "<query>"     [--top 5] [--doc X] [--lib CAMINHO] [--json]
+biblio index                    # regera INDEX.md e CLAUDE.md sem reprocessar
 biblio status                   # o que entrou, o que falhou, o que está pendente
+biblio libs                     # bibliotecas registradas
 biblio gui                      # sobe o Gradio em localhost
 biblio shortcut                 # cria o atalho na área de trabalho
 ```
 
+`add` aceita `.pdf`, `.md` e `.txt` — arquivo solto ou pasta varrida recursivamente.
+
 ### 7.2 GUI — a casca
 
-Uma tela em Gradio: arrastar PDFs ou escolher pasta → lista com estado por etapa →
-**Processar** → progresso → **Abrir pasta**. Chama a mesma função `add()` que a
-CLI chama. **Zero lógica dentro da tela.**
+Uma tela em Gradio. Chama a mesma função `adicionar()` que a CLI chama.
+**Zero lógica dentro da tela.**
+
+```
+┌─ biblio ───────────────────────────────────────────┐
+│ Biblioteca:  [ C:\Users\Usuario\biblio      ▾ ]    │  ← editável, lista as conhecidas
+│                                                    │
+│ [ arraste PDF, MD ou TXT aqui ]                    │
+│ ou a pasta:  [___________________________]         │
+│                                                    │
+│ [ ] Instalar Ollama se faltar  [ ] Reprocessar     │
+│                                                    │
+│              [ Adicionar documentos ]              │
+│ ┌────────────────────────────────────────────────┐ │
+│ │ progresso, linha a linha                       │ │
+│ └────────────────────────────────────────────────┘ │
+└────────────────────────────────────────────────────┘
+```
+
+**O botão é "Adicionar documentos", não "Criar biblioteca".** O uso real é
+incremental — documentos entram ao longo de meses, na mesma biblioteca. Um botão
+que diz "criar" treina o usuário a fazer uma nova a cada rodada; aí ele tem cinco
+bibliotecas e procura em nenhuma. Criar outra continua sendo possível: é digitar
+outro caminho no campo do topo, que já vem preenchido com a última usada.
 
 A GUI executa o pipeline de ingestão inteiro sozinha; nenhuma etapa depende de um
 agente para orquestrar.
 
-### 7.3 Skill do Claude Code — parte do produto
+**Ao terminar**, a tela mostra o que conecta a biblioteca ao agente: o caminho da
+pasta, a confirmação de que a skill está instalada, e um `biblio search` de
+exemplo já preenchido com um termo do que acabou de entrar. Esse é o passo em que
+a ferramenta passa a valer alguma coisa, e ele fica dentro do produto — não num
+README que ninguém lê.
 
-Uma skill em `.claude/skills/biblioteca/SKILL.md` ensinando o protocolo:
+### 7.3 Ensinar o agente — parte do produto
+
+Sem instrução, o agente dá `Read` na pasta e estoura o contexto: exatamente o
+problema que o projeto existe para resolver. **Pipeline sem esta seção é meio
+produto.**
+
+O protocolo, em qualquer dos dois veículos, é o mesmo:
 
 1. Comece por `biblio search "<pergunta reescrita em termos do domínio>"`
 2. Leia **só** os arquivos retornados, com `offset`/`limit`
 3. Busca vazia → `grep` na linha **Termos** do `INDEX.md`
 4. **Nunca** leia o `INDEX.md` inteiro
 
-Sem essa skill o agente dá `Read` na pasta e estoura o contexto — exatamente o
-problema que o projeto existe para resolver. Pipeline sem skill é meio produto.
+Dois veículos, porque nenhum cobre tudo:
+
+| Veículo | Onde vive | Cobre | Quando entra em contexto |
+|---|---|---|---|
+| Skill `biblioteca` | `~/.claude/skills/` | Claude Code, sem o usuário apontar nada | Nome e descrição sempre; o corpo quando o agente decide consultar |
+| `CLAUDE.md` da biblioteca | dentro da pasta | Pasta copiada para outra máquina; Claude Desktop, Cowork, ChatGPT | Só quando alguém aponta para a pasta |
+
+**A skill é instalada automaticamente** — pelo `biblio shortcut` e na primeira
+ingestão bem-sucedida, sobrescrevendo a versão anterior. Instalação manual de
+skill é um passo que o usuário esquece, e o produto sem ela não funciona.
+
+### 7.4 Orçamento de contexto
+
+A preocupação é legítima: uma ferramenta que economiza tokens não pode custar
+tokens. O que o mecanismo de ensino cobra:
+
+| O quê | Quando | Custo |
+|---|---|---|
+| Descrição da skill | toda sessão do Claude Code | ~20 tokens |
+| Corpo da skill | quando o agente decide consultar a biblioteca | ~400 tokens, uma vez |
+| `CLAUDE.md` da biblioteca | só se apontarem para a pasta | ~250 tokens, uma vez |
+| Saída de `biblio search` | por consulta | ~150 tokens (cinco resultados) |
+| Bloco do `INDEX.md` via `grep` | quando a busca falha | ~80 tokens |
+| `INDEX.md` inteiro | **nunca** | — |
+
+Uma sessão que consulta a biblioteca três vezes gasta ~900 tokens no total. Uma
+única página de PDF enviada nativamente para a API custa mais que isso.
 
 ## 8. Instalação
 
-`pip install -e .` seguido de `biblio gui`. Ollama detectado e oferecido na
-primeira execução que precisar de resumo. Sem Docker, sem serviço, sem porta fixa.
+`pip install -e .` seguido de `biblio shortcut` — que cria o atalho **e instala a
+skill**. Ollama detectado e oferecido na primeira execução que precisar de resumo.
+Sem Docker, sem serviço, sem porta fixa.
 
 **Atalho na área de trabalho:** `biblio shortcut` cria o `.lnk` via PowerShell,
 sem dependência nova. O alvo do atalho é `pythonw.exe`, não `python.exe` — senão
@@ -277,11 +411,15 @@ Cinco testes, não uma suíte. Não se testa wrapper de biblioteca de terceiro.
 2. **`normalize`** — texto com hífen quebrado e header repetido → saída limpa.
    Teste de string puro; o mais barato e o que mais pega regressão.
 3. **`slice`** — árvore de heading conhecida → arquivos esperados, **incluindo o
-   caso de piso (grudou) e o de teto (quebrou)**.
+   caso de piso (grudou), o de teto (quebrou) e o documento sem heading nenhum**.
 4. **`search`** — corpus de 5 documentos sintéticos → query conhecida traz o
-   arquivo certo no top-3.
+   arquivo certo no top-3, **e a mesma query cobrindo duas bibliotecas**.
 5. **Idempotência** — `add` duas vezes na mesma pasta → a segunda execução não
    reescreve nada.
+
+Os formatos novos de entrada **não ganham um sexto teste**: `.md` e `.txt` entram
+como casos dentro dos testes 3 e 5, que é onde a lógica deles de fato mora. O
+desvio por extensão em si é um `if`, e `if` não merece suíte.
 
 ## 11. Riscos e questões em aberto
 
@@ -293,4 +431,6 @@ Cinco testes, não uma suíte. Não se testa wrapper de biblioteca de terceiro.
 | 4 | Limiar de qualidade de OCR (~70% de palavras reconhecíveis). | Chute inicial; ajustar com dado real. |
 | 5 | Tamanho de chunk para embedding (~500 tokens). | Chute inicial; validar com o teste 4. |
 | 6 | ~~Onde a biblioteca mora por padrão?~~ | **Resolvido:** padrão global em `~/biblio/`, sobrescrito por `--out`. O atalho da área de trabalho sobe a GUI sem diretório de trabalho útil, então um padrão global é obrigatório. |
-| 7 | Sincronização entre as duas máquinas. | **Fora de escopo.** Cada máquina tem a sua biblioteca; se necessário depois, é problema de pasta sincronizada, não da ferramenta. |
+| 7 | Sincronização entre as duas máquinas. | **Fora de escopo.** Cada máquina tem a sua biblioteca; se necessário depois, é problema de pasta sincronizada, não da ferramenta. A pasta é autocontida, então copiá-la funciona — só o `pip install` precisa existir do outro lado. |
+| 8 | Quantas bibliotecas até a busca ficar lenta? | A varredura é linear no total de chunks somado. Se incomodar, `--lib` já restringe, e o passo seguinte é indexar por biblioteca — não antes de medir. |
+| 9 | `.txt` sem estrutura gera fatias de nome inútil. | Aceito e declarado (§4). A busca continua exata; o que degrada é a navegação pelo `INDEX.md`. Se virar problema, o conserto é inferir heading por heurística — trabalho real, não faça antes de doer. |
