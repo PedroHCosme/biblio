@@ -226,7 +226,7 @@ embedding falha.
 
 ### 5.3 `CLAUDE.md` — a biblioteca se explica sozinha
 
-Gerado junto com o `INDEX.md`, ~250 tokens, ensinando o protocolo de consulta:
+Gerado junto com o `INDEX.md`, ~600 tokens, ensinando o protocolo de consulta:
 buscar primeiro, ler só o intervalo devolvido, cair no `grep` dos termos quando a
 busca falhar, nunca ler o `INDEX.md` inteiro.
 
@@ -242,7 +242,9 @@ máquina" (§6.0). O caminho é gravado na geração; se a pasta for movida ou
 copiada, `biblio --out . index` de dentro dela reescreve o arquivo.
 
 Custo em contexto: **zero**, a menos que alguém aponte para a pasta. E quando
-aponta, ~250 tokens uma vez, que evitam a leitura de uma biblioteca inteira.
+aponta, ~600 tokens uma vez, que evitam a leitura de uma biblioteca inteira. Não
+é aditivo ao corpo da skill: quando este arquivo entra, é porque ele está fazendo
+o trabalho que a skill faria.
 
 ## 6. Contrato da busca
 
@@ -304,6 +306,11 @@ A pasta copiada leva o `.biblio.db` dentro (§5), então `--lib` funciona nela s
 registro nenhum — o registro serve para a busca global, não para a restrita. O que
 a outra máquina precisa é do `biblio` instalado.
 
+Para que a cópia entre também na busca global daquela máquina, `biblio --out <pasta>
+index` registra a pasta, reescreve o `CLAUDE.md` com o caminho novo e atualiza a
+descrição da skill. **Não reprocessa nada** — lê os `_meta.yaml` que já vieram
+junto. É o mesmo comando que conserta uma biblioteca movida de lugar.
+
 ### 6.1 Busca híbrida
 
 Vetorial e FTS5 rodam em paralelo; resultados são unidos e deduplicados por
@@ -321,7 +328,8 @@ clássico de somar números que não são da mesma grandeza.
 ```
 biblio add <arquivo|pasta>  [--out biblioteca/] [--device auto] [--force]
 biblio search "<query>"     [--top 5] [--doc X] [--lib CAMINHO] [--json]
-biblio index                    # regera INDEX.md e CLAUDE.md sem reprocessar
+biblio index                    # regera INDEX.md e CLAUDE.md, registra a pasta,
+                                # atualiza a skill — sem reprocessar documento
 biblio status                   # o que entrou, o que falhou, o que está pendente
 biblio libs                     # bibliotecas registradas
 biblio gui                      # sobe o Gradio em localhost
@@ -412,13 +420,14 @@ tokens. O que o mecanismo de ensino cobra:
 |---|---|---|
 | Descrição da skill | toda sessão do Claude Code | ~30 tokens (inclui o nome das bibliotecas) |
 | Corpo da skill | quando o agente decide consultar a biblioteca | ~400 tokens, uma vez |
-| `CLAUDE.md` da biblioteca | só se apontarem para a pasta | ~250 tokens, uma vez |
+| `CLAUDE.md` da biblioteca | só se apontarem para a pasta (no lugar do corpo da skill) | ~600 tokens, uma vez |
 | Saída de `biblio search` | por consulta | ~150 tokens (cinco resultados) |
 | Bloco do `INDEX.md` via `grep` | quando a busca falha | ~80 tokens |
 | `INDEX.md` inteiro | **nunca** | — |
 
-Uma sessão que consulta a biblioteca três vezes gasta ~900 tokens no total. Uma
-única página de PDF enviada nativamente para a API custa mais que isso.
+Uma sessão que consulta a biblioteca três vezes gasta ~900 tokens pela skill, ou
+~1.100 se em vez dela o agente ler o `CLAUDE.md` de uma pasta apontada. Uma única
+página de PDF enviada nativamente para a API custa mais que isso.
 
 ## 8. Instalação
 
