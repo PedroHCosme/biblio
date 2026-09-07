@@ -52,6 +52,7 @@ produto fosse conversão, essa entrada seria um no-op.
 | Formatos de entrada | `.pdf`, `.md`, `.txt` | Um `.md` já convertido tem os mesmos defeitos de um recém-convertido: cabeçalho repetido, hierarquia torta e, sobretudo, **arquivo único gigante**. Ele pula as duas primeiras etapas e ganha as outras quatro. Que a ferramenta agregue valor a um `.md` de entrada é a prova de que o valor nunca esteve na conversão |
 | Ensino do agente | Skill instalada automaticamente + `CLAUDE.md` gerado dentro da biblioteca | O usuário não deve precisar ensinar nada. Os dois mecanismos cobrem casos diferentes (§7.3) |
 | Várias bibliotecas | Registro de caminhos; a busca cobre todas | O usuário vai criar mais de uma ao longo do tempo (normas, papers). Se a busca só olhasse a padrão, a segunda biblioteca falharia em silêncio |
+| Configuração | **Nenhuma** — sem arquivo de config, sem perfil por biblioteca, sem assunto declarado | O que varia entre bibliotecas é derivado do disco na hora (caminho, nome, termos, exemplo de busca); o que não varia é constante de módulo, calibrada depois (§11, risco 3). Toda pergunta que a ferramenta faria ao usuário ela consegue responder sozinha |
 | Formato de saída | Pasta de Markdown fatiado + índice + SQLite | Uma pasta de arquivos é comida para Claude Code, Desktop, Cowork e ChatGPT. Um servidor MCP atenderia dois e custaria dez vezes mais |
 | Motor vs interface | **CLI é o motor, GUI é casca** | O agente precisa de `biblio search` no shell. Se a GUI virar a única porta, a integração com o agente morre |
 | Stack | Python + CLI + Gradio + SQLite | Docling e sentence-transformers são Python; SQLite é um arquivo que viaja com a pasta; Gradio dá drag-drop e progresso de graça |
@@ -394,6 +395,14 @@ veículo não ser redundante com o primeiro nem na máquina do próprio usuário
 ingestão bem-sucedida, sobrescrevendo a versão anterior. Instalação manual de
 skill é um passo que o usuário esquece, e o produto sem ela não funciona.
 
+**A descrição da skill nomeia as bibliotecas registradas**, derivadas do registro
+na hora de instalar: *"Consultar o acervo de documentos do usuário (bibliotecas:
+controle-digital, normas-abnt)."* É a única linha que fica em contexto o tempo
+todo, e é por ela que o agente decide se vale consultar. Um adjetivo fixo — "documentos
+técnicos" — seria um palpite sobre um acervo que a ferramenta não conhece, e
+excluiria a biblioteca de história ou de contratos do próprio usuário. Nenhum
+prompt, nome de arquivo ou heurística do `biblio` presume o assunto do acervo.
+
 ### 7.4 Orçamento de contexto
 
 A preocupação é legítima: uma ferramenta que economiza tokens não pode custar
@@ -401,7 +410,7 @@ tokens. O que o mecanismo de ensino cobra:
 
 | O quê | Quando | Custo |
 |---|---|---|
-| Descrição da skill | toda sessão do Claude Code | ~20 tokens |
+| Descrição da skill | toda sessão do Claude Code | ~30 tokens (inclui o nome das bibliotecas) |
 | Corpo da skill | quando o agente decide consultar a biblioteca | ~400 tokens, uma vez |
 | `CLAUDE.md` da biblioteca | só se apontarem para a pasta | ~250 tokens, uma vez |
 | Saída de `biblio search` | por consulta | ~150 tokens (cinco resultados) |
