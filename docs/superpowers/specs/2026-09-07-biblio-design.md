@@ -52,6 +52,7 @@ produto fosse conversão, essa entrada seria um no-op.
 | Formatos de entrada | `.pdf`, `.md`, `.txt` | Um `.md` já convertido tem os mesmos defeitos de um recém-convertido: cabeçalho repetido, hierarquia torta e, sobretudo, **arquivo único gigante**. Ele pula as duas primeiras etapas e ganha as outras quatro. Que a ferramenta agregue valor a um `.md` de entrada é a prova de que o valor nunca esteve na conversão |
 | Ensino do agente | Skill instalada automaticamente + `CLAUDE.md` gerado dentro da biblioteca | O usuário não deve precisar ensinar nada. Os dois mecanismos cobrem casos diferentes (§7.3) |
 | Várias bibliotecas | Registro de caminhos; a busca cobre todas | O usuário vai criar mais de uma ao longo do tempo (normas, papers). Se a busca só olhasse a padrão, a segunda biblioteca falharia em silêncio |
+| Idioma | **Nenhum declarado.** Resumo e termos saem no idioma de cada documento; o modelo de embedding é escolhido por recuperação **entre** idiomas | Uma biblioteca mistura norma em português e datasheet em inglês. Traduzir os termos para o português quebraria o `grep` do `INDEX.md`, que existe justamente para casar com o texto que está no documento |
 | Configuração | **Nenhuma** — sem arquivo de config, sem perfil por biblioteca, sem assunto declarado | O que varia entre bibliotecas é derivado do disco na hora (caminho, nome, termos, exemplo de busca); o que não varia é constante de módulo, calibrada depois (§11, risco 3). Toda pergunta que a ferramenta faria ao usuário ela consegue responder sozinha |
 | Formato de saída | Pasta de Markdown fatiado + índice + SQLite | Uma pasta de arquivos é comida para Claude Code, Desktop, Cowork e ChatGPT. Um servidor MCP atenderia dois e custaria dez vezes mais |
 | Motor vs interface | **CLI é o motor, GUI é casca** | O agente precisa de `biblio search` no shell. Se a GUI virar a única porta, a integração com o agente morre |
@@ -503,7 +504,7 @@ desvio por extensão em si é um `if`, e `if` não merece suíte.
 
 | # | Questão | Encaminhamento |
 |---|---|---|
-| 1 | Qual modelo de embedding cabe em CPU? `bge-m3` é forte em português mas pesado; alternativas menores são mais rápidas e piores. | Tarefa de benchmark na fase 0, medindo na máquina real. Decisão baseada em dado, não em preferência. |
+| 1 | Qual modelo de embedding cabe em CPU **e recupera entre idiomas**? Uma biblioteca vai misturar norma em português e datasheet em inglês; o que decide não é entender os dois, é achar o documento em inglês quando a pergunta veio em português. Multilíngue não garante isso. | Benchmark na fase 0 na máquina real, com quatro consultas cruzando o idioma de propósito. Descarta quem errar qualquer uma. Se nenhum passar, **registrar aqui que a busca entre idiomas não está coberta** em vez de escolher o menos ruim em silêncio. |
 | 2 | `sqlite-vec` depende de carregar extensão no SQLite; alguns builds de Python no Windows não habilitam `enable_load_extension`. | Verificar na fase 0. Fallback: busca por força bruta com numpy — para menos de ~500k chunks é instantânea e elimina a dependência. |
 | 3 | Limiar de densidade de caracteres da triagem. | Calibrar com PDFs reais do acervo; valor inicial é chute. |
 | 4 | Limiar de qualidade de OCR (~70% de palavras reconhecíveis). | Chute inicial; ajustar com dado real. |
