@@ -3,7 +3,7 @@ from pathlib import Path
 
 import yaml
 
-from biblio import meta
+from biblio import meta, ollama, summarize
 from biblio.convert import converter
 from biblio.normalize import normalizar
 from biblio.paths import raiz, registrar, slug
@@ -40,7 +40,7 @@ def _obter_texto(caminho: Path, device: str, avisar, nome: str) -> tuple[str, di
 
 
 def _processar_um(caminho: Path, biblioteca: Path, device: str, force: bool,
-                  avisar) -> str:
+                  avisar, resumir_com_ollama: bool = False) -> str:
     nome = slug(caminho.stem)
     pasta = biblioteca / nome
     digest = meta.hash_arquivo(caminho)
@@ -69,25 +69,33 @@ def _processar_um(caminho: Path, biblioteca: Path, device: str, force: bool,
 
     registro = meta.novo(caminho, digest, rota)
     registro["fatias"] = len(fatias)
+    if resumir_com_ollama:
+        try:
+            resumo, termos = summarize.resumir(pasta)
+            registro |= {"resumo": resumo, "termos": termos}
+        except Exception as erro:  # Ollama caiu no meio do lote: marca e segue (spec 9)
+            avisar(f"{nome}: resumo pendente ({erro})")
     meta.escrever(pasta, registro)
     avisar(f"{nome}: {len(fatias)} fatias")
     return "ok"
 
 
 def adicionar(alvo: Path | str, saida: Path | str | None = None, device: str = "auto",
-              force: bool = False, avisar=print) -> dict[str, int]:
+              force: bool = False, avisar=print, perguntar=None) -> dict[str, int]:
     """Processa um arquivo (.pdf/.md/.txt) ou uma pasta.
 
     `avisar` e o unico canal de progresso: a GUI passa o seu.
     """
     biblioteca = raiz(saida)
     biblioteca.mkdir(parents=True, exist_ok=True)
+    resumir_com_ollama = ollama.garantir(perguntar) if perguntar else ollama.disponivel()
 
     contagem = {"ok": 0, "pulado": 0, "falhou": 0}
     for arquivo in _arquivos(Path(alvo)):
         # falha de um arquivo nunca aborta o lote (spec 9)
         try:
-            contagem[_processar_um(arquivo, biblioteca, device, force, avisar)] += 1
+            contagem[_processar_um(arquivo, biblioteca, device, force, avisar,
+                                   resumir_com_ollama)] += 1
         except Exception as erro:
             avisar(f"{arquivo.name}: FALHOU ({erro})")
             contagem["falhou"] += 1
