@@ -311,6 +311,17 @@ index` registra a pasta, reescreve o `CLAUDE.md` com o caminho novo e atualiza a
 descrição da skill. **Não reprocessa nada** — lê os `_meta.yaml` que já vieram
 junto. É o mesmo comando que conserta uma biblioteca movida de lugar.
 
+O que viaja e o que não viaja:
+
+| Viaja na pasta | Não viaja |
+|---|---|
+| Fatias, `INDEX.md`, `CLAUDE.md`, `_meta.yaml`, `biblio.db` com os vetores | O `biblio` instalado (`pip install`) |
+| — o banco guarda `doc`/`arquivo`, nunca caminho absoluto, então é portátil | O modelo de embedding (~500 MB, baixado na primeira busca) |
+| — | O registro `~/.biblio/bibliotecas.txt`, que é da máquina |
+
+O `origem` do `_meta.yaml` aponta para o PDF na máquina de origem e fica obsoleto
+na cópia. É informativo — a biblioteca nunca precisou do original.
+
 ### 6.1 Busca híbrida
 
 Vetorial e FTS5 rodam em paralelo; resultados são unidos e deduplicados por
@@ -447,8 +458,12 @@ o atalho abre um console preto junto da GUI.
 | OCR de baixa qualidade | Marca `qualidade=baixa` no meta e **avisa no `INDEX.md`**. O usuário precisa saber que o documento é ruim antes de confiar nele. |
 | Ollama indisponível no meio do lote | Pula o resumo, marca `pendente`, continua. `biblio index` regera depois. |
 | Interrupção (Ctrl+C) | Estado gravado por etapa; retomar é rodar de novo (coberto pela idempotência). |
+| `--lib` numa pasta que não é biblioteca | **Erro, não silêncio.** Caso típico: cópia com o caminho velho no `CLAUDE.md`. A mensagem dá o comando que conserta (`biblio --out <pasta> index`). Zero resultados sem causa faria o agente concluir que o acervo não sabe a resposta |
+| Biblioteca indexada com outro modelo de embedding | **Erro ao abrir o banco.** Vetor de um modelo comparado com vetor de outro não é resultado ruim, é ruído — e sai com a mesma cara de um bom. Reindexar é barato; resposta errada de norma técnica não é |
 
 Essa coluna é o que separa "processei 200 PDFs" de "processei 12 e crashou".
+
+As duas últimas linhas existem porque **o modo de falha caro deste projeto não é o crash, é o ponteiro confiante e errado.** O usuário não tem como auditar um resultado de busca; ele vai ler o trecho apontado e acreditar.
 
 ## 10. Testes
 
