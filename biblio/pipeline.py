@@ -3,7 +3,7 @@ from pathlib import Path
 
 import yaml
 
-from biblio import meta, ollama, summarize
+from biblio import db, embed, meta, ollama, summarize
 from biblio.convert import converter
 from biblio.normalize import normalizar
 from biblio.paths import raiz, registrar, slug
@@ -69,6 +69,18 @@ def _processar_um(caminho: Path, biblioteca: Path, device: str, force: bool,
 
     registro = meta.novo(caminho, digest, rota)
     registro["fatias"] = len(fatias)
+
+    avisar(f"{nome}: indexando")
+    chunks = embed.chunks_do_documento(pasta)
+    con = db.conectar(biblioteca)
+    try:
+        # sem `with con:` aqui: substituir_documento ja abre a propria transacao
+        db.substituir_documento(con, nome, chunks,
+                                embed.vetorizar([c["texto"] for c in chunks]))
+    finally:
+        con.close()  # no Windows, conexao pendurada trava a limpeza do tmp_path
+    registro["chunks"] = len(chunks)
+
     if resumir_com_ollama:
         try:
             resumo, termos = summarize.resumir(pasta)
