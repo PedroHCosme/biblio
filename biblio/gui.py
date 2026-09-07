@@ -6,6 +6,23 @@ from pathlib import Path
 
 import gradio as gr
 
+
+def _escolher_pasta() -> str:
+    """Abre o seletor de pastas nativo do sistema. Funciona porque o servidor Gradio
+    roda na propria maquina do usuario; o dialogo aparece na area de trabalho dele.
+    ponytail: tkinter e stdlib, sem dependencia nova.
+    """
+    import tkinter as tk
+    from tkinter import filedialog
+
+    raiz_tk = tk.Tk()
+    raiz_tk.withdraw()
+    raiz_tk.attributes("-topmost", True)
+    try:
+        return filedialog.askdirectory(title="Escolha a pasta com os documentos") or ""
+    finally:
+        raiz_tk.destroy()
+
 from biblio import index, meta, pipeline, skill
 from biblio.paths import BIBLIOTECA_PADRAO, conhecidas_biblioteca, raiz
 
@@ -80,14 +97,16 @@ def subir(saida=None, share: bool = False) -> None:
         )
         arquivos = gr.File(label="Arquivos", file_count="multiple",
                            file_types=[".pdf", ".md", ".txt"])
-        # O navegador nao entrega caminho de pasta por upload, e o FileExplorer do
-        # Gradio 6 nao deixa selecionar um diretorio inteiro com um clique. Como o
-        # servidor roda na propria maquina do usuario, um campo de texto com o
-        # caminho da pasta e o que funciona (Task 4.3: campo de texto > seletor que nao abre).
-        pasta = gr.Textbox(
-            label="ou cole o caminho de uma pasta inteira",
-            placeholder=r"C:\Users\voce\Documentos\normas",
-            info="Processa todos os .pdf, .md e .txt da pasta e subpastas.")
+        # O navegador nao entrega caminho de pasta por upload e o FileExplorer do
+        # Gradio 6 nao seleciona diretorio. O botao abre o seletor nativo do SO
+        # (servidor roda na maquina do usuario); o campo fica editavel para ajuste.
+        with gr.Row():
+            pasta = gr.Textbox(
+                label="ou uma pasta inteira", scale=4,
+                placeholder=r"clique em Escolher pasta  —  ou cole o caminho aqui",
+                info="Processa todos os .pdf, .md e .txt da pasta e subpastas.")
+            escolher = gr.Button("📁 Escolher pasta", scale=1)
+        escolher.click(_escolher_pasta, None, pasta)
         with gr.Row():
             resumir = gr.Checkbox(
                 value=True,
