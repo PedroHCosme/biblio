@@ -28,10 +28,13 @@ python 03_qa_quality.py    # needs Ollama + qwen3:1.7b
 
 ## Recorded results
 
-- `results_token_cost.json` — per-question token cost, ~500 tokens median
-- `results_qa.txt` — the qwen3 answers; biblio slice gets the DH parameters right,
-  the 1,275-token grep window gets them confidently wrong
+- `results_token_cost.json` — per-question token cost, ~870 tokens median
+  (whole matched section, the `--context secao` default)
+- `results_qa.json` — the qwen3 answers under three context strategies. `qwen3:1.7b`
+  is too weak to be a clean quality judge (it scrambles parameter labels either
+  way); the reliable signal is structural — "first pages" can't reach the answer,
+  "grep window" answers confidently wrong, biblio feeds the right section.
 
-Headline: ingestion **9.5 min / 0 LLM tokens**; then **~500 tokens/question**
+Headline: ingestion **9.5 min / 0 LLM tokens**; then **~870 tokens/question**
 (~0.1 s warm search) vs **211k** to paste the book (doesn't fit) or **~16k** to
 paste the relevant chapter.

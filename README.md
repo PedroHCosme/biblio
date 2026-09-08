@@ -64,21 +64,39 @@ a search is **~0.1 s** warm (the first search of a session loads the embedding
 model, ~16 s). The "paste" approaches have no ingestion step, but the model then
 has to prefill 16k–211k tokens *on every question*.
 
-**Answer quality.** Same model reads the same source, so biblio does not make
-answers *smarter* — it makes them *reachable* (the book does not fit) and puts the
-*right* passage in front of the model. Asked "what are the four Denavit–Hartenberg
-parameters?" against the book with a small local model (`qwen3:1.7b`):
+**Answer quality.** Same model, same source text — biblio does not make answers
+*smarter*. What it changes, asking "what are the four Denavit–Hartenberg
+parameters?" against the book with a small local model:
 
-| context fed to the model | answer |
-|---|---|
-| first 3,500 tokens of the book | *"not mentioned in the provided text"* — the parameters are on page 77 |
-| 1,275 tokens grepped around the first "Denavit" hit | θ, a, **d = link length, h = joint offset** — confidently wrong |
-| **~790-token biblio section** | **θ (joint angle), a (link length), d (link offset), α (link twist)** — correct |
+- **first 3,500 tokens of the book** → *"not in the provided text"* (the answer is
+  on page 77 — you fed page 1)
+- **1,275 tokens grepped around the first "Denavit" hit** → four parameters, two
+  of them **confidently mislabelled** — the window had the answer and the model
+  still got it wrong
+- **the ~790-token biblio section** → the right section, in front of the model,
+  **with a citation** (below)
 
-Retrieval is not perfect — a 25-question eval on a separate technical corpus
-scores **80% recall@1, 92% recall@3**; when a single slice misses, you search
-again or widen. But "more context" is not the fix either: the grepped 1,275-token
-window *contained* the answer and the model still misread it.
+Retrieval is not perfect — a 25-question eval on a separate corpus scores **80%
+recall@1, 92% recall@3**; when the top hit misses you search again or read the
+second. But the failure mode is "wrong section retrieved", not "too little text".
+
+### Citations
+
+Every slice keeps a frontmatter header, so an answer can point back to the exact
+place in the original:
+
+```yaml
+---
+doc: spong-robotmodelingandcontrol
+secao: '3.2 FORWARD KINEMATICS: THE DENAVIT-HARTENBERG CONVENTION'
+paginas: [80, 81]
+pai: 33-chapter-3.md
+---
+```
+
+`_meta.yaml` stores `origem` — the absolute path of the source file. So the agent
+answers with **"Spong §3.2, p. 80–81"** and hands you the file and page to open
+and check. The library never keeps the original; it keeps the pointer to it.
 
 ## How it works
 

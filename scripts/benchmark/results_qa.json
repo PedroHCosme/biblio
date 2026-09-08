@@ -1,0 +1,38 @@
+[
+  {
+    "q": "What are the four Denavit-Hartenberg parameters?",
+    "naive": {
+      "tok": 3500,
+      "s": 76,
+      "a": "The four Denavit-Hartenberg parameters are not mentioned in the provided text."
+    },
+    "grep": {
+      "tok": 1275,
+      "s": 9,
+      "a": "The four Denavit-Hartenberg parameters are:\n\n1. The joint angle (\u03b8)\n2. The link length (a)\n3. The link twist (d)\n4. The joint offset (h)\n\nThese parameters are used in the Denavit-Hartenberg convention to describe the kinematic structure of robotic manipulators."
+    },
+    "biblio": {
+      "tok": 787,
+      "s": 18,
+      "a": "The four Denavit-Hartenberg parameters are **link length** (denoted as $ a_i $), **link twist** (denoted as $ \\theta_i $), **link offset** (denoted as $ d_i $), and **joint angle** (denoted as $ \\alpha_i $)."
+    }
+  },
+  {
+    "q": "What is a singular configuration of a manipulator and why does it matter?",
+    "naive": {
+      "tok": 3500,
+      "s": 23,
+      "a": "A singular configuration of a manipulator refers to a configuration where the robot loses its ability to move in at least one direction, typically due to the configuration of the joints. This occurs when the Jacobian matrix, which relates the joint velocities to the end-effector velocities, becomes singular, meaning it does not have an inverse. Such configurations are critical in robotics because they can lead to loss of controllability and the inability to move the end-effector in certain directions, which is essential for tasks requiring precise motion. Understanding singular configurations is important for the design and control of robotic systems, as it affects the robot's ability to perform tasks effectively and safely."
+    },
+    "grep": {
+      "tok": 1338,
+      "s": 27,
+      "a": "The context does not contain information about singular configurations of a manipulator or why they matter."
+    },
+    "biblio": {
+      "tok": 977,
+      "s": 15,
+      "a": "not in the provided text"
+    }
+  }
+]
