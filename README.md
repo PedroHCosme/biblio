@@ -67,8 +67,8 @@ the same library, and vice-versa.
 Python 3.12 · PyMuPDF + `pymupdf4llm` · Docling (+ RapidOCR) ·
 `sentence-transformers` (`paraphrase-multilingual-MiniLM-L12-v2`, 384-dim,
 CPU) · SQLite (FTS5 + brute-force vector search in NumPy — measured at ~29 ms
-over 500k chunks, so no native extension needed) · Ollama / `qwen3:4b`
-(optional) · Gradio · pytest
+over 500k chunks, so no native extension needed) · Ollama / `qwen3:1.7b`
+(optional; CPU-friendly) · Gradio · pytest
 
 ## Install
 
