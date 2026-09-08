@@ -1,5 +1,6 @@
 """Deteccao, instalacao consentida e chamada do modelo local."""
 import json
+import re
 import shutil
 import subprocess
 import urllib.error
@@ -51,9 +52,14 @@ def garantir(perguntar) -> bool:
 
 
 def gerar(prompt: str, timeout: int = 180) -> str:
-    corpo = json.dumps({"model": MODELO, "prompt": prompt, "stream": False,
-                        "think": False}).encode()
+    # `"think": false` no payload nao desliga o raciocinio do qwen3 nesta versao do
+    # Ollama: ele gera ~900 tokens de "Okay, the user asked..." antes da resposta,
+    # 10x mais lento em CPU. O marcador `/no_think` no prompt e o que a familia qwen3
+    # entende. `<think></think>` residual, se vier, e removido abaixo.
+    corpo = json.dumps({"model": MODELO, "prompt": f"{prompt}\n/no_think",
+                        "stream": False, "think": False}).encode()
     requisicao = urllib.request.Request(ENDERECO, data=corpo,
                                         headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(requisicao, timeout=timeout) as resposta:
-        return json.load(resposta)["response"].strip()
+        texto = json.load(resposta)["response"]
+    return re.sub(r"<think>.*?</think>", "", texto, flags=re.S).strip()
