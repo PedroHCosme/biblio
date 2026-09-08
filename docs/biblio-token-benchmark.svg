@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 300" font-family="-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">
+  <text x="20" y="27" fill="#767676" font-size="16" font-weight="700">Input tokens to answer one question from a 419-page book</text>
+  <text x="20" y="45" fill="#999" font-size="12">a 419-page engineering textbook &#8212; 211k tokens of text &#8212; log scale</text>
+
+  <g stroke="#bbb" stroke-width="1" opacity="0.5">
+    <line x1="140" y1="62" x2="140" y2="230"/>
+    <line x1="295" y1="62" x2="295" y2="230"/>
+    <line x1="451" y1="62" x2="451" y2="230"/>
+    <line x1="606" y1="62" x2="606" y2="230"/>
+  </g>
+  <g fill="#999" font-size="11" text-anchor="middle">
+    <text x="140" y="246">100</text>
+    <text x="295" y="246">1k</text>
+    <text x="451" y="246">10k</text>
+    <text x="606" y="246">100k</text>
+  </g>
+
+  <line x1="654" y1="58" x2="654" y2="234" stroke="#e5534b" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="650" y="56" fill="#999" font-size="10.5" text-anchor="end">Claude 200k context &#8594;</text>
+
+  <g font-size="12.5">
+    <rect x="140" y="72"  width="516" height="30" fill="#e5534b"/>
+    <text x="20"  y="92" fill="#767676" font-weight="600">Paste whole book</text>
+    <text x="662" y="92" fill="#767676" font-weight="700">211,000</text>
+
+    <rect x="140" y="122" width="343" height="30" fill="#d4a017"/>
+    <text x="20"  y="142" fill="#767676" font-weight="600">Paste one chapter</text>
+    <text x="489" y="142" fill="#767676" font-weight="700">~16,300</text>
+
+    <rect x="140" y="172" width="108" height="30" fill="#3fa34d"/>
+    <text x="20"  y="192" fill="#767676" font-weight="600">biblio search + read</text>
+    <text x="254" y="192" fill="#767676" font-weight="700">~500</text>
+  </g>
+
+  <text x="20" y="283" fill="#999" font-size="11.5">biblio: ~33&#215; leaner than the right chapter, ~420&#215; leaner than the whole book &#8212; which does not fit anyway.</text>
+</svg>

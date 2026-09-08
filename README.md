@@ -35,6 +35,49 @@ A single PDF page sent natively to an LLM API costs more than three `biblio`
 lookups. The library folder is also just *readable Markdown* — if the search
 binary isn't around, `grep` on `INDEX.md` still works.
 
+## Benchmark
+
+Test document: a **419-page robotics textbook** — **211,000 tokens** of
+extractable text — plus one Wikipedia article as a `.md`. Machine: 8-core CPU, no
+GPU. Token counts are `tiktoken` `cl100k_base` (a standard public tokenizer —
+close enough for the ratios). Scripts and raw numbers in
+[`scripts/benchmark/`](scripts/benchmark/).
+
+![token benchmark](docs/biblio-token-benchmark.svg)
+
+**Input tokens to answer one question whose answer is somewhere in the book:**
+
+| approach | tokens / question | works? |
+|---|---:|---|
+| paste the whole book | 211,000 | ✗ — exceeds a 200k context, 1.6× a 128k one |
+| paste the one relevant chapter | ~16,300 | ✓ if you know which chapter |
+| **`biblio search` + read the hit** | **~500** | ✓ retrieval finds the section |
+
+Over a 10-question study session: **~5,800 tokens** with biblio (820 one-time for
+the skill + ~500 each) vs **163,000** re-pasting a chapter each turn — **~28×**.
+
+**Speed** — one-time ingestion of the 419-page book: **9.5 min** on CPU,
+**0 LLM tokens** (extraction, slicing and embeddings are all local). After that,
+a search is **~0.1 s** warm (the first search of a session loads the embedding
+model, ~16 s). The "paste" approaches have no ingestion step, but the model then
+has to prefill 16k–211k tokens *on every question*.
+
+**Answer quality.** Same model reads the same source, so biblio does not make
+answers *smarter* — it makes them *reachable* (the book does not fit) and puts the
+*right* passage in front of the model. Asked "what are the four Denavit–Hartenberg
+parameters?" against the book with a small local model (`qwen3:1.7b`):
+
+| context fed to the model | answer |
+|---|---|
+| first 3,500 tokens of the book | *"not mentioned in the provided text"* — the parameters are on page 77 |
+| 1,275 tokens grepped around the first "Denavit" hit | θ, a, **d = link length, h = joint offset** — confidently wrong |
+| **471-token biblio slice** | **θ (joint angle), a (link length), d (link offset), α (link twist)** — correct |
+
+Retrieval is not perfect — a 25-question eval on a separate technical corpus
+scores **80% recall@1, 92% recall@3**; when a single slice misses, you search
+again or widen. But "more context" is not the fix either: the grepped 1,275-token
+window *contained* the answer and the model still misread it.
+
 ## How it works
 
 A six-stage pipeline, each stage writing its result to disk:

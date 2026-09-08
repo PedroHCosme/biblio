@@ -1,0 +1,53 @@
+{
+  "skill_desc_tok": 47,
+  "skill_corpo_tok": 820,
+  "por_pergunta": [
+    {
+      "q": "What are the four Denavit-Hartenberg parameters and what does each represent?",
+      "dt": 16.376874446868896,
+      "saida_tok": 185,
+      "trecho_tok": 471,
+      "custo": 656,
+      "top1": "spong-robotmodelingandcontrol/69-3-2-forward-kinematics-the-denavit-hartenberg-convention.md",
+      "linhas": "17-26"
+    },
+    {
+      "q": "What is the difference between forward and inverse kinematics of a manipulator?",
+      "dt": 0.03589129447937012,
+      "saida_tok": 164,
+      "trecho_tok": 282,
+      "custo": 446,
+      "top1": "spong-robotmodelingandcontrol/69-3-2-forward-kinematics-the-denavit-hartenberg-convention.md",
+      "linhas": "9-22"
+    },
+    {
+      "q": "How does the manipulator Jacobian relate joint velocities to end-effector velocity?",
+      "dt": 0.20682287216186523,
+      "saida_tok": 183,
+      "trecho_tok": 192,
+      "custo": 375,
+      "top1": "spong-robotmodelingandcontrol/94-u-4-u-velocity-kinematics-the-manipulator-jacobian.md",
+      "linhas": "19-24"
+    },
+    {
+      "q": "What is a singular configuration of a robot manipulator?",
+      "dt": 0.04265308380126953,
+      "saida_tok": 181,
+      "trecho_tok": 192,
+      "custo": 373,
+      "top1": "spong-robotmodelingandcontrol/94-u-4-u-velocity-kinematics-the-manipulator-jacobian.md",
+      "linhas": "19-24"
+    },
+    {
+      "q": "What is the control law for computed-torque (inverse dynamics) control?",
+      "dt": 0.04707193374633789,
+      "saida_tok": 156,
+      "trecho_tok": 484,
+      "custo": 640,
+      "top1": "spong-robotmodelingandcontrol/233-8-3-inverse-dynamics.md",
+      "linhas": "9-36"
+    }
+  ],
+  "media_custo": 498.0,
+  "media_dt": 3.3418627262115477
+}

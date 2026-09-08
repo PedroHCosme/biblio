@@ -15,6 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+benchmark = ["tiktoken>=0.7"]
 
 [project.scripts]
 biblio = "biblio.cli:main"
