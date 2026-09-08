@@ -53,6 +53,17 @@ def test_texto_antes_do_primeiro_heading_nao_e_perdido():
     assert "preambulo importante" in fatias[0].texto
 
 
+def test_heading_repetido_de_slide_nao_vira_fatias_separadas():
+    # slide deck: `## Tema` repetido em 3 slides, com variacao de caixa/pontuacao
+    md = ("# Motores\n" + "d" * 500 + "\n"
+          "## Circuitos Magneticos\n" + "a" * 300 + "\n"
+          "<!-- pag 2 -->\n## circuitos magneticos\n" + "b" * 300 + "\n"
+          "<!-- pag 3 -->\n## Circuitos Magneticos.\n" + "c" * 300)
+    circ = [f for f in fatiar(md) if f.secao.lower().startswith("circuitos")]
+    assert len(circ) == 1
+    assert all(x * 50 in circ[0].texto for x in "abc")
+
+
 def test_documento_sem_heading_vira_partes_numeradas():
     """Caso tipico do .txt: sem estrutura, cada pedaco do teto e uma fatia propria."""
     md = ("y" * 1000 + "\n\n") * 200  # ~200 mil caracteres; com TETO=8000 dao 29 fatias

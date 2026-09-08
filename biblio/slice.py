@@ -54,7 +54,15 @@ def _cortar_por_heading(markdown: str) -> list[_Bruta]:
             secoes[-1].paginas.append(pagina)
             continue
         if m := _HEADING.match(linha):
-            secoes.append(_Bruta(secao=m.group(2), nivel=len(m.group(1)), paginas=[pagina]))
+            titulo, nivel = m.group(2), len(m.group(1))
+            # Slide deck repete `## Mesmo Titulo` em cada slide do topico (as vezes com
+            # caixa/pontuacao diferente do OCR). Nao abre secao nova para o mesmo
+            # heading seguido — e o mesmo assunto continuando. Sem isto, 43% das
+            # fatias do acervo real eram nome repetido (aula-6: 47 -> 26 fatias).
+            if slug(secoes[-1].secao) == slug(titulo) and secoes[-1].nivel == nivel:
+                secoes[-1].paginas.append(pagina)
+                continue
+            secoes.append(_Bruta(secao=titulo, nivel=nivel, paginas=[pagina]))
         secoes[-1].linhas.append(linha)
     if not secoes[0].texto:
         secoes.pop(0)
