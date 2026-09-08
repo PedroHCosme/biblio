@@ -27,6 +27,22 @@ def test_preserva_linha_repetida_que_e_heading():
     assert normalizar(entrada).count("## Requisitos") == 4
 
 
+def test_remove_rodape_de_slide_em_negrito():
+    # slide deck: cada pagina repete o rodape em **negrito** e o numero em **N**
+    entrada = "\n".join(
+        f"# Slide {i}\ncorpo do slide {i}\n**Conversores - ELE085**\n**{i}**"
+        for i in range(1, 6))
+    saida = normalizar(entrada)
+    assert "ELE085" not in saida, "rodape em negrito repetido devia sair"
+    assert "**1**" not in saida and "\n**2**\n" not in saida
+    assert saida.count("corpo do slide") == 5
+
+
+def test_negrito_legitimo_nao_repetido_fica():
+    entrada = "# Doc\n**Importante:** leia isto com atencao antes de comecar"
+    assert "**Importante:**" in normalizar(entrada)
+
+
 def test_remove_numero_de_pagina_solto():
     entrada = "texto util\n42\noutro texto util\nPagina 43 de 238\nfim"
     saida = normalizar(entrada)

@@ -10,32 +10,44 @@ _SO_NUMERO = re.compile(r"^\s*\d{1,4}\s*$")
 _PAGINA_DE = re.compile(r"^\s*(p[áa]g(ina)?\.?\s*)?\d{1,4}\s*(de|/|of)\s*\d{1,4}\s*$", re.I)
 _HEADING = re.compile(r"^(#{1,6})\s+\S")
 _MARCADOR = re.compile(r"^<!-- pag \d+ -->$")
+_ITEM_LISTA = re.compile(r"^([-*+]\s|\d+[.)]\s)")  # marcador REAL de lista, com espaco
+_ENFASE = "*_ "  # `**Rodape em negrito**` de slide nao e estrutura
+
+
+def _sem_enfase(linha: str) -> str:
+    return linha.strip().strip(_ENFASE)
 
 
 def _e_estrutura(linha: str) -> bool:
-    """Heading, lista, tabela ou marcador: nunca some, por mais que se repita."""
+    """Heading, lista, tabela ou marcador: nunca some, por mais que se repita.
+
+    `**Texto**` NAO conta: rodape de slide vem em negrito e precisa poder sumir.
+    """
     despido = linha.strip()
     return bool(
         _HEADING.match(despido)
         or _MARCADOR.match(despido)
-        or despido.startswith(("|", ">", "-", "*", "```"))
+        or _ITEM_LISTA.match(despido)
+        or despido.startswith(("|", ">", "```"))
     )
 
 
 def _remover_repetidos(linhas: list[str]) -> list[str]:
+    # compara sem enfase: "**ELE085**" e "ELE085" sao o mesmo rodape repetido
     candidatas = Counter(
-        linha.strip() for linha in linhas
-        if linha.strip() and len(linha.strip()) <= MAX_CARACTERES_CABECALHO
+        _sem_enfase(linha) for linha in linhas
+        if _sem_enfase(linha) and len(_sem_enfase(linha)) <= MAX_CARACTERES_CABECALHO
         and not _e_estrutura(linha)
     )
     lixo = {texto for texto, n in candidatas.items() if n >= LIMIAR_REPETICAO}
-    return [linha for linha in linhas if linha.strip() not in lixo]
+    return [linha for linha in linhas if _sem_enfase(linha) not in lixo]
 
 
 def _remover_numeros_de_pagina(linhas: list[str]) -> list[str]:
+    # "**4**" no rodape do slide tambem e numero de pagina solto
     return [
         linha for linha in linhas
-        if not (_SO_NUMERO.match(linha) or _PAGINA_DE.match(linha))
+        if not (_SO_NUMERO.match(_sem_enfase(linha)) or _PAGINA_DE.match(_sem_enfase(linha)))
     ]
 
 
