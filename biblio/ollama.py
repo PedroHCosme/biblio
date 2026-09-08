@@ -3,6 +3,7 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 import urllib.error
 import urllib.request
 
@@ -13,9 +14,14 @@ import urllib.request
 MODELO = "qwen3:1.7b"
 ENDERECO = "http://localhost:11434/api/generate"
 
+_INSTALA_OLLAMA = {
+    "win32": "winget install -e --id Ollama.Ollama",
+    "darwin": "brew install ollama   (ou baixe em https://ollama.com/download)",
+}.get(sys.platform, "curl -fsSL https://ollama.com/install.sh | sh")
+
 INSTRUCAO_MANUAL = (
     "Instale manualmente:\n"
-    "  winget install Ollama.Ollama\n"
+    f"  {_INSTALA_OLLAMA}\n"
     f"  ollama pull {MODELO}\n"
     "Depois rode `biblio index` para gerar os resumos pendentes."
 )
@@ -52,12 +58,26 @@ def garantir(perguntar) -> bool:
             f"Ollama esta rodando mas o modelo '{MODELO}' (~1,4 GB, gera os resumos "
             "e termos-chave) nao foi baixado. Baixar agora?"
         ):
-            if subprocess.run(["ollama", "pull", MODELO]).returncode == 0:
-                return True
-            print(INSTRUCAO_MANUAL)
+            try:
+                if subprocess.run(["ollama", "pull", MODELO]).returncode == 0:
+                    return True
+            except OSError:
+                pass
+            print(f"Rode: ollama pull {MODELO}")
         return False
     if instalado():
         return False  # instalado mas servico fora do ar; nao cabe a nos subir servico
+
+    # Auto-instalacao so via winget (Windows). Nos outros sistemas, instrucao manual:
+    # cada gerenciador de pacote e diferente e nao cabe adivinhar.
+    if sys.platform != "win32" or not shutil.which("winget"):
+        if perguntar and perguntar(
+            "Ollama nao esta instalado. Ele gera os resumos e os termos-chave "
+            "(o resto do pipeline funciona sem ele). Ver como instalar?"
+        ):
+            print(INSTRUCAO_MANUAL)
+        return False
+
     if not perguntar(
         "Ollama nao esta instalado. Ele gera os resumos e os termos-chave de cada "
         "documento (o resto do pipeline funciona sem ele). Instalar agora via winget?"
@@ -65,7 +85,11 @@ def garantir(perguntar) -> bool:
         return False
     for comando in (["winget", "install", "-e", "--id", "Ollama.Ollama"],
                     ["ollama", "pull", MODELO]):
-        if subprocess.run(comando).returncode != 0:
+        try:
+            ok = subprocess.run(comando).returncode == 0
+        except OSError:
+            ok = False
+        if not ok:
             print(INSTRUCAO_MANUAL)
             return False
     return disponivel()

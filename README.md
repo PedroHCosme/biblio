@@ -210,6 +210,17 @@ Code session, a question a document can answer makes the agent run
 (or copy the folder into the project). Its `CLAUDE.md` teaches the agent to
 search with `--lib`, so results stay inside that one collection.
 
+## Platforms
+
+Windows, macOS and Linux. The pipeline, search, GUI and skill are pure
+`pathlib` + cross-platform deps. Two things are Windows-only and degrade
+cleanly elsewhere:
+
+- **`biblio shortcut`** creates a `.lnk` on Windows; on macOS/Linux it just
+  installs the skill and tells you to run `biblio gui`.
+- **Ollama auto-install** uses `winget`. On macOS/Linux `biblio` prints the
+  right command instead (`brew` / `ollama.com/install.sh`) — nothing crashes.
+
 ## Portability
 
 A library folder can be moved, renamed, or copied to another machine with **no
