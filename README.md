@@ -80,8 +80,36 @@ biblio shortcut     # desktop shortcut + installs the Claude Code skill
 ```
 
 Docling pulls PyTorch (~2 GB) on first install; the embedding model (~500 MB)
-downloads on first search. Ollama is optional — without it everything runs
-except per-document summaries and the `Terms:` line in `INDEX.md`.
+downloads on first search.
+
+## Ollama (optional — for summaries)
+
+Ollama runs a small local model (`qwen3:1.7b`, ~1.4 GB) that writes one summary
+and a keyword line per document. Those keyword lines become the `**Terms:**`
+entries in `INDEX.md` — the fallback path an agent uses to find an exact
+identifier ("NBR 6118", "9.4.2") when semantic search misses it.
+
+**Without Ollama, everything else works.** Ingestion, slicing, hybrid search and
+pointers are unaffected. You only lose the per-document summary and the
+`**Terms:**` safety net; documents show up as `summary pending` in
+`biblio status`.
+
+**Auto-install.** On the first `biblio add`, if Ollama is not installed, biblio
+asks (once) and, on yes, installs it via `winget` and pulls the model. If Ollama
+is already installed but the model is missing, biblio asks to pull just the model.
+It never installs anything silently.
+
+**Manual / on another machine:**
+
+```bash
+winget install -e --id Ollama.Ollama
+ollama pull qwen3:1.7b
+biblio index                # backfill summaries for documents already ingested
+```
+
+`biblio index` only (re)generates summaries for documents marked pending; use
+`biblio add <source> --force` to regenerate everything. On a GPU box you can bump
+the model to `qwen3:4b` in `biblio/ollama.py` for slightly better summaries.
 
 ## Use
 

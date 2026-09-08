@@ -33,10 +33,29 @@ def disponivel() -> bool:
         return False
 
 
+def _tem_modelo() -> bool:
+    try:
+        with urllib.request.urlopen("http://localhost:11434/api/tags", timeout=2) as r:
+            nomes = [m["name"] for m in json.load(r).get("models", [])]
+        return any(n == MODELO or n.startswith(MODELO + "@") for n in nomes)
+    except (urllib.error.URLError, OSError, ValueError, KeyError):
+        return False
+
+
 def garantir(perguntar) -> bool:
     """perguntar(texto) -> bool. Devolve True se der para resumir agora."""
     if disponivel():
-        return True
+        if _tem_modelo():
+            return True
+        # Ollama instalado por fora, mas o modelo dos resumos nunca foi baixado.
+        if perguntar and perguntar(
+            f"Ollama esta rodando mas o modelo '{MODELO}' (~1,4 GB, gera os resumos "
+            "e termos-chave) nao foi baixado. Baixar agora?"
+        ):
+            if subprocess.run(["ollama", "pull", MODELO]).returncode == 0:
+                return True
+            print(INSTRUCAO_MANUAL)
+        return False
     if instalado():
         return False  # instalado mas servico fora do ar; nao cabe a nos subir servico
     if not perguntar(
@@ -64,6 +83,12 @@ def gerar(prompt: str, timeout: int = 180, max_tokens: int = 400) -> str:
                         "options": {"num_predict": max_tokens}}).encode()
     requisicao = urllib.request.Request(ENDERECO, data=corpo,
                                         headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(requisicao, timeout=timeout) as resposta:
-        texto = json.load(resposta)["response"]
+    try:
+        with urllib.request.urlopen(requisicao, timeout=timeout) as resposta:
+            texto = json.load(resposta)["response"]
+    except urllib.error.HTTPError as erro:
+        if erro.code == 404:  # Ollama no ar, modelo nao baixado
+            raise RuntimeError(f"modelo '{MODELO}' nao instalado — rode: "
+                               f"ollama pull {MODELO}") from None
+        raise
     return re.sub(r"<think>.*?</think>", "", texto, flags=re.S).strip()
