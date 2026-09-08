@@ -106,9 +106,18 @@ Com `qwen3:1.7b` os resumos saem bons:
 > *curva-de-magnetização:* "Relação B versus H de um núcleo ferromagnético
 > submetido a excitação contínua crescente a partir do estado desmagnetizado."
 
-Backfill dos 171 resumos: ~60–90 min em CPU, em background. Sem isso, o `INDEX.md`
-funciona mas sem a linha `**Termos:**` (a rede de segurança para identificador
-exato).
+Backfill dos **171 resumos: 48,7 min** em CPU (background), **0 falhas**. Resultado
+no `INDEX.md`: 168/171 blocos com linha `**Termos:**`.
+
+**Bug encontrado aqui:** `summarize._extrair` espera o modelo responder no formato
+`RESUMO:\nTERMOS:` em linhas separadas. `qwen3:1.7b` às vezes escreve `TERMOS:` no
+meio do parágrafo do resumo — quando isso acontece, os termos são engolidos pelo
+resumo e a linha `**Termos:**` não sai (3 casos). Parsing precisa ficar robusto
+(regex em qualquer posição, ou `format: json` do Ollama).
+
+**`INDEX.md` = 86 KB (~21,5k tokens).** Nunca é lido inteiro (só `grep`), mas o
+`grep -A4` fica poluído: a linha `**Secoes:**` de um documento com 40 fatias
+despeja 40 slugs. Candidata a corte (ver seção 8).
 
 ## 7. Critérios de aceitação do plano
 
@@ -129,3 +138,10 @@ exato).
 nunca corpo; precisão de ponteiro perfeita; cross-lingual real. As arestas
 (colisão de slug, 1 consulta específica em #5, resumos lentos em CPU) estão
 documentadas e nenhuma bloqueia o uso.
+
+## 8. Melhorias medidas depois do benchmark
+
+Ver [`2026-09-08-biblio-melhorias.md`](2026-09-08-biblio-melhorias.md). Resumo:
+bônus de heading no ranking levou o eval de **recall@1 56% → 80%** (25 consultas);
+`LIMIAR_CARACTERES` 200 → 120 cortou a conversão de uma aula OCR-pesada de 144 s
+para 82 s; `_extrair` robusto; `INDEX.md` mais enxuto; aviso de colisão de slug.
