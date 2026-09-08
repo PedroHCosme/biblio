@@ -163,25 +163,27 @@ identifier ("NBR 6118", "9.4.2") when semantic search misses it.
 
 **Without Ollama, everything else works.** Ingestion, slicing, hybrid search and
 pointers are unaffected. You only lose the per-document summary and the
-`**Terms:**` safety net; documents show up as `summary pending` in
-`biblio status`.
+`**Terms:**` safety net; documents show up as `summary pending` in `biblio status`.
 
-**Auto-install.** On the first `biblio add`, if Ollama is not installed, biblio
-asks (once) and, on yes, installs it via `winget` and pulls the model. If Ollama
-is already installed but the model is missing, biblio asks to pull just the model.
-It never installs anything silently.
+**Summaries are opt-in, and nothing downloads without asking:**
 
-**Manual / on another machine:**
+| how you run it | what happens |
+|---|---|
+| `biblio add <src>` (default) | summarizes **only if Ollama + the model are already set up**; otherwise skips with a note — never downloads |
+| `biblio add <src> --summary` | summarizes; if Ollama or the model is missing, **asks** before installing / pulling (~1.4 GB) |
+| `biblio add <src> --no-summary` | never summarizes, even if Ollama is running |
+| GUI checkbox (off by default) | checking it authorizes the ~3 GB download, stated on the label |
+| `biblio index --summary` | backfill pending summaries for an already-ingested library |
+
+**Set it up manually / on another machine:**
 
 ```bash
-winget install -e --id Ollama.Ollama
+winget install -e --id Ollama.Ollama      # macOS/Linux: see biblio's message
 ollama pull qwen3:1.7b
-biblio index                # backfill summaries for documents already ingested
+biblio index --summary                    # backfill summaries
 ```
 
-`biblio index` only (re)generates summaries for documents marked pending; use
-`biblio add <source> --force` to regenerate everything. On a GPU box you can bump
-the model to `qwen3:4b` in `biblio/ollama.py` for slightly better summaries.
+On a GPU box you can bump the model to `qwen3:4b` in `biblio/ollama.py`.
 
 ## CLI
 
@@ -201,6 +203,8 @@ biblio add ~/Documents/standards              # a folder, recursive
 biblio add ~/Documents/standards --out physics   # into a named library
 biblio add ~/Documents/standards --force      # reprocess even if unchanged
 biblio add scan.pdf --device cuda             # auto | cpu | cuda for Docling
+biblio add ~/Documents/standards --summary    # also write per-doc summaries (Ollama)
+biblio add ~/Documents/standards --no-summary # never, even if Ollama is up
 ```
 
 Re-running on a folder is cheap and safe: unchanged files are skipped by SHA-256,

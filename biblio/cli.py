@@ -40,6 +40,11 @@ def main(argv=None) -> int:
     a.add_argument("alvo")
     a.add_argument("--device", default="auto", help="auto | cpu | cuda")
     a.add_argument("--force", action="store_true", help="reprocessa mesmo sem mudanca")
+    a.add_argument("--summary", dest="resumo", action="store_const", const="sim",
+                   default="auto", help="gera resumo/termos por documento; baixa "
+                   "Ollama+qwen se preciso (perguntando antes)")
+    a.add_argument("--no-summary", dest="resumo", action="store_const", const="nao",
+                   help="nunca gera resumo/termos, mesmo com Ollama disponivel")
 
     b = sub.add_parser("search", help="busca e devolve ponteiros")
     b.add_argument("consulta")
@@ -51,7 +56,12 @@ def main(argv=None) -> int:
                    help="secao: a fatia inteira (padrao); janela: so o trecho que casou")
     b.add_argument("--json", action="store_true")
 
-    sub.add_parser("index", help="regera INDEX.md e CLAUDE.md sem reprocessar")
+    i = sub.add_parser("index", help="regera INDEX.md e CLAUDE.md sem reprocessar")
+    i.add_argument("--summary", dest="resumo", action="store_const", const="sim",
+                   default="auto", help="preenche resumos pendentes; instala o "
+                   "Ollama+qwen se preciso (perguntando antes)")
+    i.add_argument("--no-summary", dest="resumo", action="store_const", const="nao",
+                   help="so regera INDEX.md/CLAUDE.md, sem tocar em resumo")
     sub.add_parser("status", help="o que entrou, o que falhou, o que esta pendente")
     sub.add_parser("libs", help="bibliothecas registradas")
     sub.add_parser("skill", help="instala a skill do Claude Code (sem criar atalho)")
@@ -62,8 +72,9 @@ def main(argv=None) -> int:
 
     if args.comando == "add":
         contagem = pipeline.adicionar(Path(args.alvo), saida=args.out, device=args.device,
-                                      force=args.force, perguntar=_perguntar)
-        index.gerar(saida=args.out, resumir_pendentes=False)
+                                      force=args.force, perguntar=_perguntar,
+                                      resumo=args.resumo)
+        index.gerar(saida=args.out, resumo="nao")
         if contagem["ok"]:
             skill.instalar()  # o produto sem ela nao funciona; nao dependa de o usuario lembrar
         print(f"\n{contagem['ok']} processados, {contagem['pulado']} inalterados, "
@@ -78,7 +89,7 @@ def main(argv=None) -> int:
         return 0
 
     if args.comando == "index":
-        destino = index.gerar(saida=args.out)
+        destino = index.gerar(saida=args.out, resumo=args.resumo, perguntar=_perguntar)
         skill.instalar()  # bibliotheca vinda de outra maquina entra na descricao aqui
         print(destino)
         return 0

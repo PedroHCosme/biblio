@@ -1,7 +1,7 @@
 """Gera INDEX.md e CLAUDE.md a partir da bibliotheca em disco. Nunca reprocessa original."""
 from pathlib import Path
 
-from biblio import meta, skill, summarize
+from biblio import meta, ollama, skill, summarize
 from biblio.paths import raiz, registrar
 
 CABECALHO = """# Bibliotheca
@@ -52,9 +52,13 @@ def _bloco(pasta: Path, dados: dict) -> str:
     return "\n".join(linhas) + "\n"
 
 
-def gerar(saida=None, resumir_pendentes: bool = True, avisar=print) -> Path:
+def gerar(saida=None, resumo: str = "auto", perguntar=None, avisar=print) -> Path:
+    """`resumo`: 'auto' (padrao) preenche resumo pendente SE o Ollama ja estiver
+    pronto; 'sim' pergunta e instala se faltar; 'nao' so regera INDEX/CLAUDE.
+    """
     bibliotheca = raiz(saida)
     bibliotheca.mkdir(parents=True, exist_ok=True)  # `biblio index` antes do primeiro add
+    resumir_pendentes = ollama.quer_resumo(resumo, perguntar, avisar)
     blocos = []
     for pasta in sorted(p for p in bibliotheca.iterdir() if p.is_dir()):
         dados = meta.ler(pasta)

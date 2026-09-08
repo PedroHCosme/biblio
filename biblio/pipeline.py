@@ -122,14 +122,17 @@ def _processar_um(caminho: Path, bibliotheca: Path, device: str, force: bool,
 
 
 def adicionar(alvo: Path | str, saida: Path | str | None = None, device: str = "auto",
-              force: bool = False, avisar=print, perguntar=None) -> dict[str, int]:
+              force: bool = False, avisar=print, perguntar=None,
+              resumo: str = "auto") -> dict[str, int]:
     """Processa um arquivo (.pdf/.md/.txt) ou uma pasta.
 
     `avisar` e o unico canal de progresso: a GUI passa o seu.
+    `resumo`: 'auto' (padrao) usa Ollama SE ja estiver pronto, sem baixar nada;
+    'sim' pergunta e instala se faltar; 'nao' nunca resume.
     """
     bibliotheca = raiz(saida)
     bibliotheca.mkdir(parents=True, exist_ok=True)
-    resumir_com_ollama = ollama.garantir(perguntar) if perguntar else ollama.disponivel()
+    resumir_com_ollama = ollama.quer_resumo(resumo, perguntar, avisar)
 
     contagem = {"ok": 0, "pulado": 0, "falhou": 0}
     for arquivo in _arquivos(Path(alvo)):

@@ -48,10 +48,11 @@ def _processar(arquivos, pasta, destino, resumir, forcar):
     bibliotheca = raiz(destino)  # nome vira ~/biblio/<slug>; caminho passa direto
     linhas, fila = [], []
     for alvo in alvos:
+        # checkbox marcada = consentiu com o download (~3 GB, dito no rotulo)
         contagem = pipeline.adicionar(
             alvo, saida=bibliotheca, force=forcar,
-            perguntar=(lambda _: True) if resumir else None,
-            avisar=fila.append,
+            resumo="sim" if resumir else "nao",
+            perguntar=lambda _: True, avisar=fila.append,
         )
         linhas += fila
         fila.clear()
@@ -59,7 +60,7 @@ def _processar(arquivos, pasta, destino, resumir, forcar):
                       f"{contagem['falhou']} falharam")
         yield "\n".join(linhas)
 
-    index.gerar(saida=bibliotheca, resumir_pendentes=False)
+    index.gerar(saida=bibliotheca, resumo="nao")
     skill.instalar(avisar=linhas.append)
 
     # Este bloco e o passo em que a ferramenta passa a valer alguma coisa.
@@ -109,10 +110,11 @@ def subir(saida=None, share: bool = False) -> None:
         escolher.click(_escolher_pasta, None, pasta)
         with gr.Row():
             resumir = gr.Checkbox(
-                value=True,
+                value=False,
                 label="Gerar resumo e palavras-chave de cada documento",
-                info="Usa um modelo local. Na primeira vez baixa ~3 GB; depois "
-                     "funciona offline. Sem isto tudo roda, menos os resumos do indice.")
+                info="Opcional. Usa um modelo local (Ollama). Marcar autoriza baixar "
+                     "~3 GB na primeira vez. Sem isto a busca funciona igual — só falta "
+                     "a linha de termos do índice.")
             forcar = gr.Checkbox(label="Reprocessar mesmo sem mudanca")
         botao = gr.Button("Adicionar documentos", variant="primary")
         progresso = gr.Textbox(label="Progresso", lines=18, max_lines=18, autoscroll=True)

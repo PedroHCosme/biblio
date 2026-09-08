@@ -48,11 +48,33 @@ def _tem_modelo() -> bool:
         return False
 
 
-def garantir(perguntar) -> bool:
-    """perguntar(texto) -> bool. Devolve True se der para resumir agora."""
+def quer_resumo(modo: str, perguntar=None, avisar=print) -> bool:
+    """Modo -> 'da para resumir agora?'.
+
+    'nao'  : nunca. 'auto' (padrao): so se o Ollama+modelo ja estiverem prontos,
+    sem baixar nada. 'sim': pergunta e instala o que faltar.
+    """
+    if modo == "nao":
+        return False
+    ok = garantir(perguntar, permitir_instalar=(modo == "sim"))
+    if not ok:
+        avisar("resumos: Ollama indisponivel, seguindo sem" if modo == "sim"
+               else "resumos: Ollama nao configurado, pulando (--summary habilita)")
+    return ok
+
+
+def garantir(perguntar=None, *, permitir_instalar: bool = False) -> bool:
+    """Devolve True se da para resumir agora.
+
+    permitir_instalar=False (padrao): so usa o que ja esta pronto, NUNCA baixa nada.
+    permitir_instalar=True: se faltar Ollama ou o modelo, pergunta (`perguntar(texto)
+    -> bool`) e instala/baixa. Nada e instalado sem essa pergunta.
+    """
+    if disponivel() and _tem_modelo():
+        return True
+    if not permitir_instalar:
+        return False
     if disponivel():
-        if _tem_modelo():
-            return True
         # Ollama instalado por fora, mas o modelo dos resumos nunca foi baixado.
         if perguntar and perguntar(
             f"Ollama esta rodando mas o modelo '{MODELO}' (~1,4 GB, gera os resumos "
@@ -78,10 +100,12 @@ def garantir(perguntar) -> bool:
             print(INSTRUCAO_MANUAL)
         return False
 
-    if not perguntar(
+    if not perguntar or not perguntar(
         "Ollama nao esta instalado. Ele gera os resumos e os termos-chave de cada "
         "documento (o resto do pipeline funciona sem ele). Instalar agora via winget?"
     ):
+        if not perguntar:
+            print(INSTRUCAO_MANUAL)
         return False
     for comando in (["winget", "install", "-e", "--id", "Ollama.Ollama"],
                     ["ollama", "pull", MODELO]):

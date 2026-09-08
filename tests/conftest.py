@@ -37,6 +37,12 @@ def registro_isolado(tmp_path, monkeypatch):
     monkeypatch.setattr("biblio.paths.REGISTRO", tmp_path / "bibliothecas.txt")
 
 
+@pytest.fixture(autouse=True)
+def sem_ollama(monkeypatch):
+    """Nao chama o modelo local nos testes, mesmo se a maquina tiver Ollama no ar."""
+    monkeypatch.setattr("biblio.ollama.disponivel", lambda: False)
+
+
 CORPUS = {
     "nbr-6118-concreto": [
         ("09-ancoragem.md", "# 9.4 Comprimento de ancoragem\n"

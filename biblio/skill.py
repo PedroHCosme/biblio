@@ -83,8 +83,10 @@ Ele foi escrito para `grep`, nao para leitura.
 
 | Comando | Para que |
 |---|---|
+| `biblio add <pasta>` | Ingere. **Nao gera resumo por padrao** — pergunte ao usuario e passe `--summary` so se ele quiser (isso pode baixar ~1,4 GB) |
 | `biblio search "x" --doc <nome>` | Restringe a um documento |
 | `biblio search "x" --lib <caminho>` | Restringe a uma bibliotheca |
+| `biblio search "x" --context janela` | Trecho minimo em vez da secao inteira |
 | `biblio libs` | Lista as bibliothecas registradas |
 | `biblio status` | O que entrou, o que falhou, o que esta pendente |
 
