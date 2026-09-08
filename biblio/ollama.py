@@ -102,9 +102,12 @@ def gerar(prompt: str, timeout: int = 180, max_tokens: int = 400) -> str:
     # entende. `<think></think>` residual, se vier, e removido abaixo.
     # num_predict limita a geracao: a tarefa e uma frase + 12 termos (~120 tokens);
     # sem teto o modelo diverte-se por centenas de tokens e o custo em CPU explode.
+    # temperature baixa + repeat_penalty: 1.7b as vezes ecoa a linha de aliases ou
+    # entra em loop ("cmake-gmock, cmake-gtest, ..."); isto estabiliza a saida.
     corpo = json.dumps({"model": MODELO, "prompt": f"{prompt}\n/no_think",
                         "stream": False, "think": False,
-                        "options": {"num_predict": max_tokens}}).encode()
+                        "options": {"num_predict": max_tokens, "temperature": 0.2,
+                                    "repeat_penalty": 1.2}}).encode()
     requisicao = urllib.request.Request(ENDERECO, data=corpo,
                                         headers={"Content-Type": "application/json"})
     try:

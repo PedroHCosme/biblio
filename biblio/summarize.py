@@ -23,13 +23,45 @@ Documento:
 {amostra}"""
 
 
+_FRONTMATTER = re.compile(r"\A---\r?\n.*?\r?\n---\r?\n", re.S)
+# linha de sumario/navegacao: `- [[#Secao|Secao]]`, `- [Titulo](#ancora)`, `* Cap 1 .... 3`
+_LINHA_INDICE = re.compile(r"^\s*(?:[-*+]\s+)?(?:\[\[|\[[^\]]*\]\(#|\d+(?:\.\d+)*\s|.{0,50}\.{3,}\s*\d+\s*$)")
+
+
+_LINHA_ALIASES = re.compile(r"^\*[^*]+\*$")  # `*alias1, alias2*` do frontmatter Obsidian
+
+
+def _e_prosa(linha: str) -> bool:
+    despida = linha.strip()
+    if not despida or despida in ("---", "***") or despida.startswith(
+            ("#", "|", "```", "<!--")):
+        return False  # heading, tabela, fence, marcador
+    if _LINHA_ALIASES.match(despida):
+        return False  # o modelo local ecoa essa linha como TERMOS em vez de resumir
+    return not _LINHA_INDICE.match(despida)
+
+
 def _amostra(pasta_doc: Path) -> str:
-    partes = []
-    for arquivo in sorted(pasta_doc.glob("[0-9]*.md")):
-        partes.append(arquivo.read_text(encoding="utf-8"))
-        if sum(map(len, partes)) > MAX_AMOSTRA:
+    """So prosa e headings: o sumario/TOC do proprio documento (lista de
+    `[[wikilink]]` ou linhas com dot-leader) faz o modelo local degenerar num loop
+    de termos. Ele nao resume um indice.
+    """
+    arquivos = sorted(pasta_doc.glob("[0-9]*.md"))
+    partes: list[str] = []
+    total = 0
+    for arquivo in arquivos:
+        corpo = _FRONTMATTER.sub("", arquivo.read_text(encoding="utf-8"))
+        for linha in corpo.splitlines():
+            if linha.startswith("#") or _e_prosa(linha):
+                partes.append(linha)
+                total += len(linha) + 1
+        if total > MAX_AMOSTRA:
             break
-    return "".join(partes)[:MAX_AMOSTRA]
+    texto = "\n".join(partes).strip()[:MAX_AMOSTRA]
+    if len(texto) >= 200:
+        return texto
+    return _FRONTMATTER.sub("", "".join(
+        a.read_text(encoding="utf-8") for a in arquivos))[:MAX_AMOSTRA]
 
 
 def _extrair(resposta: str) -> tuple[str, list[str]]:
@@ -46,7 +78,9 @@ def _extrair(resposta: str) -> tuple[str, list[str]]:
 
     depois = depois.split("\n\n")[0]  # para na primeira quebra dupla
     termos = [t.strip(" .;\n\t-") for t in re.split(r"[,\n]", depois)]
-    return resumo, [t for t in termos if t][:15]
+    # <= 40 chars: termo de busca, nao um pedaco de frase (o 1.7b as vezes despeja
+    # o resumo inteiro no campo TERMOS quando a prosa e boilerplate juridico)
+    return resumo, [t for t in termos if t and len(t) <= 40][:15]
 
 
 def resumir(pasta_doc: Path) -> tuple[str, list[str]]:
