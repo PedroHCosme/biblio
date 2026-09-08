@@ -1,4 +1,5 @@
 """Um resumo por documento (spec 4.5) — nunca por chunk. Roda uma vez, custa zero depois."""
+import re
 from pathlib import Path
 
 from biblio import ollama
@@ -32,13 +33,20 @@ def _amostra(pasta_doc: Path) -> str:
 
 
 def _extrair(resposta: str) -> tuple[str, list[str]]:
-    resumo, termos = "", []
-    for linha in resposta.splitlines():
-        if linha.upper().startswith("RESUMO:"):
-            resumo = linha.split(":", 1)[1].strip()
-        elif linha.upper().startswith("TERMOS:"):
-            termos = [t.strip() for t in linha.split(":", 1)[1].split(",") if t.strip()]
-    return resumo, termos
+    """qwen3:1.7b nem sempre poe RESUMO/TERMOS em linhas separadas: as vezes escreve
+    `TERMOS:` no meio do paragrafo, ou envolve em `**`. Parser tolerante a isso.
+    """
+    texto = resposta.replace("*", "").strip()
+    corte = re.search(r"(?i)\btermos?\s*:", texto)
+    antes = texto[:corte.start()] if corte else texto
+    depois = texto[corte.end():] if corte else ""
+
+    m = re.search(r"(?i)\bresumo\s*:\s*(.+)", antes, re.S)
+    resumo = (m.group(1) if m else antes).strip().split("\n")[0].strip()
+
+    depois = depois.split("\n\n")[0]  # para na primeira quebra dupla
+    termos = [t.strip(" .;\n\t-") for t in re.split(r"[,\n]", depois)]
+    return resumo, [t for t in termos if t][:15]
 
 
 def resumir(pasta_doc: Path) -> tuple[str, list[str]]:
