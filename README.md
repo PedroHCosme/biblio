@@ -1,4 +1,4 @@
-# biblio
+# Bibliotheca
 
 **A local document-memory layer for coding agents.** Point it at a pile of
 `.pdf`, `.md` and `.txt` files; it gives back a folder of sliced, indexed,
