@@ -1,6 +1,7 @@
 """Busca hibrida. Devolve caminho, linhas, score e heading. Nunca o corpo (spec 6)."""
 import re
 import unicodedata
+from pathlib import Path
 
 from biblio import db, embed
 from biblio.paths import conhecidas_bibliotheca, registrar, todas
@@ -32,7 +33,24 @@ def rrf(listas: list[list]) -> dict:
     return pontos
 
 
-def buscar(consulta: str, saida=None, top: int = 5, doc: str | None = None) -> list[dict]:
+def _intervalo(caminho: str, linha: dict, contexto: str) -> tuple[int, int]:
+    """`janela`: so o trecho que casou com a consulta (ponteiro minimo).
+    `secao` (padrao): a fatia inteira — o arquivo e delimitado por heading e tem
+    teto de 8000 chars, entao ainda e barato, e a resposta de uma pergunta
+    costuma passar da janela que casou (a janela e boa para *rankear*, curta
+    demais para *responder*).
+    """
+    if contexto == "janela":
+        return linha["linha_ini"], linha["linha_fim"]
+    try:
+        n = len(Path(caminho).read_text(encoding="utf-8", errors="replace").splitlines())
+    except OSError:
+        return linha["linha_ini"], linha["linha_fim"]
+    return 1, n
+
+
+def buscar(consulta: str, saida=None, top: int = 5, doc: str | None = None,
+           contexto: str = "secao") -> list[dict]:
     """Cobre todas as bibliothecas registradas, salvo `saida` (caminho ou lista)."""
     candidatos = top * MULTIPLO
     vetor = embed.vetorizar_consulta(consulta)
@@ -87,10 +105,11 @@ def buscar(consulta: str, saida=None, top: int = 5, doc: str | None = None) -> l
         if caminho in vistos:  # spec 6.1: deduplicado por arquivo, fica o melhor
             continue
         vistos.add(caminho)
+        ini, fim = _intervalo(caminho, linha, contexto)
         achados.append({
             "caminho": caminho, "doc": linha["doc"], "arquivo": linha["arquivo"],
-            "secao": linha["secao"], "linha_ini": linha["linha_ini"],
-            "linha_fim": linha["linha_fim"], "score": round(ponto, 4),
+            "secao": linha["secao"], "linha_ini": ini,
+            "linha_fim": fim, "score": round(ponto, 4),
         })
         if len(achados) == top:
             break

@@ -49,6 +49,16 @@ def test_caminho_devolvido_e_absoluto_e_existe(bibliotheca_sintetica):
     assert caminho.is_absolute() and caminho.exists()
 
 
+def test_context_secao_devolve_a_fatia_inteira(bibliotheca_sintetica):
+    from pathlib import Path
+    q = "comprimento de ancoragem"
+    janela = buscar(q, saida=bibliotheca_sintetica, top=1, contexto="janela")[0]
+    secao = buscar(q, saida=bibliotheca_sintetica, top=1, contexto="secao")[0]
+    n = len(Path(secao["caminho"]).read_text(encoding="utf-8").splitlines())
+    assert (secao["linha_ini"], secao["linha_fim"]) == (1, n)
+    assert secao["linha_fim"] - secao["linha_ini"] >= janela["linha_fim"] - janela["linha_ini"]
+
+
 def test_busca_cobre_duas_bibliothecas(bibliotheca_sintetica, bibliotheca_secundaria):
     """Spec 6.0: a segunda bibliotheca nao pode falhar em silencio."""
     consulta = "fatigue of welded joints under cyclic loading"

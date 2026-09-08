@@ -47,6 +47,8 @@ def main(argv=None) -> int:
     b.add_argument("--doc", help="restringe a um documento")
     b.add_argument("--lib", help="restringe a uma bibliotheca: caminho ou nome "
                                  "(padrao: todas as conhecidas)")
+    b.add_argument("--context", choices=("secao", "janela"), default="secao",
+                   help="secao: a fatia inteira (padrao); janela: so o trecho que casou")
     b.add_argument("--json", action="store_true")
 
     sub.add_parser("index", help="regera INDEX.md e CLAUDE.md sem reprocessar")
@@ -70,7 +72,7 @@ def main(argv=None) -> int:
 
     if args.comando == "search":
         achados = search.buscar(args.consulta, saida=args.lib or args.out,
-                                top=args.top, doc=args.doc)
+                                top=args.top, doc=args.doc, contexto=args.context)
         print(json.dumps(achados, ensure_ascii=False) if args.json
               else search.formatar(achados))
         return 0

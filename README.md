@@ -51,10 +51,12 @@ close enough for the ratios). Scripts and raw numbers in
 |---|---:|---|
 | paste the whole book | 211,000 | ✗ — exceeds a 200k context, 1.6× a 128k one |
 | paste the one relevant chapter | ~16,300 | ✓ if you know which chapter |
-| **`biblio search` + read the hit** | **~500** | ✓ retrieval finds the section |
+| **`biblio search` + read the hit** | **~870** | ✓ retrieval finds the section |
 
-Over a 10-question study session: **~5,800 tokens** with biblio (820 one-time for
-the skill + ~500 each) vs **163,000** re-pasting a chapter each turn — **~28×**.
+The hit is the whole matched **section** (heading-bounded, ≤ ~2000 tokens), not
+one sentence — enough to answer without a second read. Over a 10-question study
+session: **~9,500 tokens** with biblio (870 one-time for the skill + ~870 each)
+vs **163,000** re-pasting a chapter each turn — **~17×**.
 
 **Speed** — one-time ingestion of the 419-page book: **9.5 min** on CPU,
 **0 LLM tokens** (extraction, slicing and embeddings are all local). After that,
@@ -71,7 +73,7 @@ parameters?" against the book with a small local model (`qwen3:1.7b`):
 |---|---|
 | first 3,500 tokens of the book | *"not mentioned in the provided text"* — the parameters are on page 77 |
 | 1,275 tokens grepped around the first "Denavit" hit | θ, a, **d = link length, h = joint offset** — confidently wrong |
-| **471-token biblio slice** | **θ (joint angle), a (link length), d (link offset), α (link twist)** — correct |
+| **~790-token biblio section** | **θ (joint angle), a (link length), d (link offset), α (link twist)** — correct |
 
 Retrieval is not perfect — a 25-question eval on a separate technical corpus
 scores **80% recall@1, 92% recall@3**; when a single slice misses, you search

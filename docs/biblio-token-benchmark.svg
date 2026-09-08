@@ -27,10 +27,10 @@
     <text x="20"  y="142" fill="#767676" font-weight="600">Paste one chapter</text>
     <text x="489" y="142" fill="#767676" font-weight="700">~16,300</text>
 
-    <rect x="140" y="172" width="108" height="30" fill="#3fa34d"/>
+    <rect x="140" y="172" width="145" height="30" fill="#3fa34d"/>
     <text x="20"  y="192" fill="#767676" font-weight="600">biblio search + read</text>
-    <text x="254" y="192" fill="#767676" font-weight="700">~500</text>
+    <text x="291" y="192" fill="#767676" font-weight="700">~870</text>
   </g>
 
-  <text x="20" y="283" fill="#999" font-size="11.5">biblio: ~33&#215; leaner than the right chapter, ~420&#215; leaner than the whole book &#8212; which does not fit anyway.</text>
+  <text x="20" y="283" fill="#999" font-size="11.5">biblio: ~19&#215; leaner than the right chapter, ~240&#215; leaner than the whole book &#8212; which does not fit anyway.</text>
 </svg>

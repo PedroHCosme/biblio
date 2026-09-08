@@ -1,53 +1,53 @@
 {
   "skill_desc_tok": 47,
-  "skill_corpo_tok": 820,
+  "skill_corpo_tok": 871,
   "por_pergunta": [
     {
       "q": "What are the four Denavit-Hartenberg parameters and what does each represent?",
-      "dt": 16.376874446868896,
+      "dt": 17.24569034576416,
       "saida_tok": 185,
-      "trecho_tok": 471,
-      "custo": 656,
+      "trecho_tok": 787,
+      "custo": 972,
       "top1": "spong-robotmodelingandcontrol/69-3-2-forward-kinematics-the-denavit-hartenberg-convention.md",
-      "linhas": "17-26"
+      "linhas": "1-25"
     },
     {
       "q": "What is the difference between forward and inverse kinematics of a manipulator?",
-      "dt": 0.03589129447937012,
+      "dt": 0.053072214126586914,
       "saida_tok": 164,
-      "trecho_tok": 282,
-      "custo": 446,
+      "trecho_tok": 787,
+      "custo": 951,
       "top1": "spong-robotmodelingandcontrol/69-3-2-forward-kinematics-the-denavit-hartenberg-convention.md",
-      "linhas": "9-22"
+      "linhas": "1-25"
     },
     {
       "q": "How does the manipulator Jacobian relate joint velocities to end-effector velocity?",
-      "dt": 0.20682287216186523,
+      "dt": 0.05699038505554199,
       "saida_tok": 183,
-      "trecho_tok": 192,
-      "custo": 375,
+      "trecho_tok": 623,
+      "custo": 806,
       "top1": "spong-robotmodelingandcontrol/94-u-4-u-velocity-kinematics-the-manipulator-jacobian.md",
-      "linhas": "19-24"
+      "linhas": "1-23"
     },
     {
       "q": "What is a singular configuration of a robot manipulator?",
-      "dt": 0.04265308380126953,
+      "dt": 0.0467371940612793,
       "saida_tok": 181,
-      "trecho_tok": 192,
-      "custo": 373,
+      "trecho_tok": 623,
+      "custo": 804,
       "top1": "spong-robotmodelingandcontrol/94-u-4-u-velocity-kinematics-the-manipulator-jacobian.md",
-      "linhas": "19-24"
+      "linhas": "1-23"
     },
     {
       "q": "What is the control law for computed-torque (inverse dynamics) control?",
-      "dt": 0.04707193374633789,
+      "dt": 0.05470991134643555,
       "saida_tok": 156,
-      "trecho_tok": 484,
-      "custo": 640,
+      "trecho_tok": 629,
+      "custo": 785,
       "top1": "spong-robotmodelingandcontrol/233-8-3-inverse-dynamics.md",
-      "linhas": "9-36"
+      "linhas": "1-41"
     }
   ],
-  "media_custo": 498.0,
-  "media_dt": 3.3418627262115477
+  "media_custo": 863.6,
+  "media_dt": 3.491440010070801
 }
