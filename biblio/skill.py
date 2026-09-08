@@ -153,18 +153,12 @@ a ferramenta nao esta instalada — e **nao** caia em ler a pasta por varredura.
 {PROTOCOLO.format(comando='biblio', escopo=' --lib "<caminho desta pasta>"')}"""
 
 
-_DESTINO_ANTIGO = Path.home() / ".claude" / "skills" / "biblioteca"  # antes do nome latino
-
-
 def instalar(avisar=print) -> Path:
     """Sobrescreve a skill instalada. Idempotente, barato, roda a cada ingestao.
 
     Roda depois de `registrar()`, para que a bibliotheca recem-criada ja apareca na
     descricao.
     """
-    if _DESTINO_ANTIGO.is_dir():  # so deixa a skill nova
-        import shutil
-        shutil.rmtree(_DESTINO_ANTIGO, ignore_errors=True)
     DESTINO.mkdir(parents=True, exist_ok=True)
     alvo = DESTINO / "SKILL.md"
     texto = texto_skill()

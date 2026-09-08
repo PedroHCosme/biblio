@@ -29,18 +29,8 @@ def raiz(saida: Path | str | None = None) -> Path:
 REGISTRO = Path.home() / ".biblio" / "bibliothecas.txt"
 
 
-def _migrar_registro() -> None:
-    """Renomeia bibliotecas.txt -> bibliothecas.txt uma vez, sem perder o que ja
-    estava registrado. Deriva o nome antigo de REGISTRO para respeitar monkeypatch.
-    """
-    antigo = REGISTRO.with_name("bibliotecas.txt")  # antes do nome latino
-    if antigo.exists() and not REGISTRO.exists():
-        antigo.rename(REGISTRO)
-
-
 def registrar(bibliotheca: Path) -> None:
     """Move a bibliotheca para o topo da lista. ponytail: um txt, nao um banco."""
-    _migrar_registro()
     caminho = str(bibliotheca.resolve())
     conhecidas = [c for c in conhecidas_bibliotheca() if c != caminho]
     REGISTRO.parent.mkdir(parents=True, exist_ok=True)
@@ -49,7 +39,6 @@ def registrar(bibliotheca: Path) -> None:
 
 def conhecidas_bibliotheca() -> list[str]:
     """Mais recente primeiro. Some da lista o que foi apagado do disco."""
-    _migrar_registro()
     if not REGISTRO.exists():
         return []
     return [linha for linha in REGISTRO.read_text(encoding="utf-8").splitlines()
