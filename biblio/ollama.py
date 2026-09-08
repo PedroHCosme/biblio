@@ -6,10 +6,11 @@ import subprocess
 import urllib.error
 import urllib.request
 
-# ponytail: 4b, nao o 8b padrao do `ollama pull qwen3`. A tarefa e uma frase e uma
-# lista de termos a partir de 12 mil caracteres; 8b dobra o download e o tempo por
-# documento em CPU sem melhorar isso. Suba se os resumos sairem ruins no acervo real.
-MODELO = "qwen3:4b"
+# ponytail: 1.7b. Medido no acervo real (14 aulas + vault): 4b leva ~180s/doc em
+# CPU (carga fria de 3GB + prompt-eval) e estoura o timeout nos documentos maiores;
+# 1.7b faz o mesmo resumo em ~75s/doc com qualidade suficiente para uma frase + 12
+# termos. Suba para 4b se tiver GPU ou se os resumos sairem ruins.
+MODELO = "qwen3:1.7b"
 ENDERECO = "http://localhost:11434/api/generate"
 
 INSTRUCAO_MANUAL = (
@@ -51,13 +52,16 @@ def garantir(perguntar) -> bool:
     return disponivel()
 
 
-def gerar(prompt: str, timeout: int = 180) -> str:
+def gerar(prompt: str, timeout: int = 180, max_tokens: int = 400) -> str:
     # `"think": false` no payload nao desliga o raciocinio do qwen3 nesta versao do
     # Ollama: ele gera ~900 tokens de "Okay, the user asked..." antes da resposta,
     # 10x mais lento em CPU. O marcador `/no_think` no prompt e o que a familia qwen3
     # entende. `<think></think>` residual, se vier, e removido abaixo.
+    # num_predict limita a geracao: a tarefa e uma frase + 12 termos (~120 tokens);
+    # sem teto o modelo diverte-se por centenas de tokens e o custo em CPU explode.
     corpo = json.dumps({"model": MODELO, "prompt": f"{prompt}\n/no_think",
-                        "stream": False, "think": False}).encode()
+                        "stream": False, "think": False,
+                        "options": {"num_predict": max_tokens}}).encode()
     requisicao = urllib.request.Request(ENDERECO, data=corpo,
                                         headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(requisicao, timeout=timeout) as resposta:

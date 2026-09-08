@@ -3,7 +3,7 @@ from pathlib import Path
 
 from biblio import ollama
 
-MAX_AMOSTRA = 12_000  # ponytail: cabeca do documento basta para resumir; sem map-reduce
+MAX_AMOSTRA = 6_000  # ponytail: cabeca do documento basta; alem disso so custa prompt-eval em CPU
 
 # Nada de "documento tecnico" aqui: o acervo pode ser norma, contrato, apostila ou
 # livro de historia. Adjetivo de dominio no prompt enviesa o resumo do que nao encaixa.
