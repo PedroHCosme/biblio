@@ -76,8 +76,17 @@ over 500k chunks, so no native extension needed) · Ollama / `qwen3:1.7b`
 conda create -n biblio python=3.12 -y
 conda activate biblio
 pip install -e .
-biblio shortcut     # desktop shortcut + installs the Claude Code skill
+biblio shortcut     # desktop shortcut for the GUI + installs the Claude Code skill
 ```
+
+No desktop shortcut wanted? Install just the Claude Code skill:
+
+```bash
+biblio skill
+```
+
+(`biblio add` and `biblio index` also (re)install the skill, so this is only
+needed to set it up before the first ingestion.)
 
 Docling pulls PyTorch (~2 GB) on first install; the embedding model (~500 MB)
 downloads on first search.
@@ -166,6 +175,7 @@ biblio library is an error (not a silent zero), with the command to fix it.
 biblio index      # rebuild INDEX.md + CLAUDE.md, backfill pending summaries, reinstall skill
 biblio status     # per-document: pages/format, slice count, ok | failed | summary pending
 biblio libs       # registered libraries, most-recently-used first
+biblio skill      # install the Claude Code skill only (no shortcut)
 biblio gui        # Gradio ingestion panel on http://127.0.0.1:7860
 biblio shortcut   # desktop .lnk for the GUI + install the Claude Code skill
 ```

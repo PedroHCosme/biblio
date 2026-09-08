@@ -52,6 +52,7 @@ def main(argv=None) -> int:
     sub.add_parser("index", help="regera INDEX.md e CLAUDE.md sem reprocessar")
     sub.add_parser("status", help="o que entrou, o que falhou, o que esta pendente")
     sub.add_parser("libs", help="bibliotecas registradas")
+    sub.add_parser("skill", help="instala a skill do Claude Code (sem criar atalho)")
     sub.add_parser("gui", help="sobe a interface em localhost")
     sub.add_parser("shortcut", help="cria o atalho na area de trabalho")
 
@@ -86,6 +87,10 @@ def main(argv=None) -> int:
     if args.comando == "libs":
         for caminho in conhecidas_biblioteca() or ["(nenhuma; rode `biblio add`)"]:
             print(caminho)
+        return 0
+
+    if args.comando == "skill":
+        print(skill.instalar())
         return 0
 
     if args.comando == "gui":
