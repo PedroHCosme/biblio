@@ -45,6 +45,11 @@ def main(argv=None) -> int:
                    "Ollama+qwen se preciso (perguntando antes)")
     a.add_argument("--no-summary", dest="resumo", action="store_const", const="nao",
                    help="nunca gera resumo/termos, mesmo com Ollama disponivel")
+    a.add_argument("--max-size", type=float, default=None, metavar="MB",
+                   help="pula arquivos maiores que N megabytes (ex: --max-size 10)")
+    a.add_argument("--fast", action="store_true",
+                   help="pula OCR (Docling), usa so extracao nativa — rapido mas "
+                   "paginas escaneadas saem vazias")
 
     b = sub.add_parser("search", help="busca e devolve ponteiros")
     b.add_argument("consulta")
@@ -67,13 +72,20 @@ def main(argv=None) -> int:
     sub.add_parser("skill", help="instala a skill do Claude Code (sem criar atalho)")
     sub.add_parser("gui", help="sobe a interface em localhost")
     sub.add_parser("shortcut", help="cria o atalho na area de trabalho")
+    sub.add_parser("version", help="mostra a versao instalada")
+    sub.add_parser("update", help="atualiza para a versao mais recente do GitHub")
 
     args = p.parse_args(argv)
+
+    if args.comando in ("add", "gui", "index"):
+        from biblio.version_check import checar
+        checar()
 
     if args.comando == "add":
         contagem = pipeline.adicionar(Path(args.alvo), saida=args.out, device=args.device,
                                       force=args.force, perguntar=_perguntar,
-                                      resumo=args.resumo)
+                                      resumo=args.resumo, max_size_mb=args.max_size,
+                                      fast=args.fast)
         index.gerar(saida=args.out, resumo="nao")
         if contagem["ok"]:
             skill.instalar()  # o produto sem ela nao funciona; nao dependa de o usuario lembrar
@@ -116,6 +128,17 @@ def main(argv=None) -> int:
         if lnk := criar():
             print(lnk)
         return 0
+
+    if args.comando == "version":
+        from importlib.metadata import version
+        print(f"biblio {version('biblio')}")
+        return 0
+
+    if args.comando == "update":
+        import subprocess
+        url = "git+https://github.com/PedroHCosme/biblio.git"
+        print(f"Atualizando de {url} ...")
+        return subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", url]).returncode
 
     return 1
 

@@ -50,7 +50,8 @@ def _sem_frontmatter_de_fonte(texto: str) -> str:
     return linha + texto[m.end():]
 
 
-def _obter_texto(caminho: Path, device: str, avisar, nome: str) -> tuple[str, dict]:
+def _obter_texto(caminho: Path, device: str, avisar, nome: str,
+                 fast: bool = False) -> tuple[str, dict]:
     """(markdown bruto, rota). Entrada que ja e texto pula triagem e conversao."""
     if caminho.suffix.lower() != ".pdf":
         avisar(f"{nome}: ja e texto, pulando conversao")
@@ -58,14 +59,29 @@ def _obter_texto(caminho: Path, device: str, avisar, nome: str) -> tuple[str, di
         return _sem_frontmatter_de_fonte(bruto), {}
     avisar(f"{nome}: triando")
     rota = triar(caminho)
-    avisar(f"{nome}: convertendo {sum(len(v) for v in rota.values())} paginas")
-    return converter(caminho, rota, device=device), rota
+    n_nat, n_cplx, n_ocr = len(rota["nativa"]), len(rota["complexa"]), len(rota["ocr"])
+    partes = []
+    if n_nat:
+        partes.append(f"{n_nat} nativas")
+    if n_cplx:
+        partes.append(f"{n_cplx} com tabela")
+    if n_ocr:
+        partes.append(f"{n_ocr} OCR (~{n_ocr * 30}s em CPU)")
+    avisar(f"{nome}: {' + '.join(partes) or '0 paginas'}"
+           + (" [fast: sem OCR]" if fast else ""))
+    return converter(caminho, rota, device=device, avisar=avisar, fast=fast), rota
 
 
 def _processar_um(caminho: Path, bibliotheca: Path, device: str, force: bool,
-                  avisar, resumir_com_ollama: bool = False) -> str:
+                  avisar, resumir_com_ollama: bool = False,
+                  max_size_mb: float | None = None, fast: bool = False) -> str:
     nome = slug(caminho.stem)
     pasta = bibliotheca / nome
+    tamanho_mb = caminho.stat().st_size / (1024 * 1024)
+    if max_size_mb is not None and tamanho_mb > max_size_mb:
+        avisar(f"{nome}: {tamanho_mb:.1f}MB > limite de {max_size_mb}MB, pulando")
+        return "pulado"
+
     digest = meta.hash_arquivo(caminho)
 
     if not force and meta.ja_processado(pasta, digest):
@@ -79,7 +95,7 @@ def _processar_um(caminho: Path, bibliotheca: Path, device: str, force: bool,
         avisar(f"{nome}: AVISO — mesmo nome que {Path(anterior).name}, sobrescrevendo")
 
     try:
-        bruto, rota = _obter_texto(caminho, device, avisar, nome)
+        bruto, rota = _obter_texto(caminho, device, avisar, nome, fast=fast)
     except Exception as erro:  # PDF com senha, arquivo corrompido, encoding impossivel
         avisar(f"{nome}: FALHOU ({erro})")
         meta.escrever(pasta, {"origem": str(caminho.resolve()), "hash": digest,
@@ -123,12 +139,15 @@ def _processar_um(caminho: Path, bibliotheca: Path, device: str, force: bool,
 
 def adicionar(alvo: Path | str, saida: Path | str | None = None, device: str = "auto",
               force: bool = False, avisar=print, perguntar=None,
-              resumo: str = "auto") -> dict[str, int]:
+              resumo: str = "auto", max_size_mb: float | None = None,
+              fast: bool = False) -> dict[str, int]:
     """Processa um arquivo (.pdf/.md/.txt) ou uma pasta.
 
     `avisar` e o unico canal de progresso: a GUI passa o seu.
     `resumo`: 'auto' (padrao) usa Ollama SE ja estiver pronto, sem baixar nada;
     'sim' pergunta e instala se faltar; 'nao' nunca resume.
+    `max_size_mb`: pula arquivos maiores que esse limite (None = sem limite).
+    `fast`: pula Docling/OCR, usa pymupdf4llm pra tudo (paginas escaneadas saem vazias).
     """
     bibliotheca = raiz(saida)
     bibliotheca.mkdir(parents=True, exist_ok=True)
@@ -139,7 +158,8 @@ def adicionar(alvo: Path | str, saida: Path | str | None = None, device: str = "
         # falha de um arquivo nunca aborta o lote (spec 9)
         try:
             contagem[_processar_um(arquivo, bibliotheca, device, force, avisar,
-                                   resumir_com_ollama)] += 1
+                                   resumir_com_ollama,
+                                   max_size_mb=max_size_mb, fast=fast)] += 1
         except Exception as erro:
             avisar(f"{arquivo.name}: FALHOU ({erro})")
             contagem["falhou"] += 1

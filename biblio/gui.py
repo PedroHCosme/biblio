@@ -88,8 +88,14 @@ def subir(saida=None, share: bool = False) -> None:
     padrao = Path(saida).name if saida else (conhecidas[0] if conhecidas
                                              else BIBLIOTHECA_PADRAO.name)
 
+    from biblio.version_check import _versao_instalada, _versao_remota
+    v_local, v_remota = _versao_instalada(), _versao_remota()
+    aviso_versao = (f"  **Versao {v_remota} disponivel** (instalada: {v_local})"
+                    f" — rode `biblio update` no terminal para atualizar."
+                    if v_remota and v_remota != v_local else "")
+
     with gr.Blocks(title="biblio") as tela:
-        gr.Markdown("# biblio")
+        gr.Markdown(f"# biblio{aviso_versao}")
         destino = gr.Dropdown(
             label="Bibliotheca",
             info="Um assunto por bibliotheca. Digite um nome novo para comecar outra.",

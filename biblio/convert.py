@@ -22,7 +22,7 @@ def _converter_nativas(caminho_pdf: Path, paginas: list[int]) -> dict[int, str]:
 
 
 def _converter_com_docling(caminho_pdf: Path, paginas: list[int], ocr: bool,
-                           device: str) -> dict[int, str]:
+                           device: str, avisar=None, rotulo: str = "") -> dict[int, str]:
     """Docling nao aceita subconjunto de paginas, entao cada pagina vira um PDF de uma folha.
 
     ponytail: uma folha por chamada e mais lento que um lote, mas o custo real e o OCR,
@@ -45,8 +45,11 @@ def _converter_com_docling(caminho_pdf: Path, paginas: list[int], ocr: bool,
     )
 
     saida: dict[int, str] = {}
+    total = len(paginas)
     with pymupdf.open(caminho_pdf) as origem:
-        for numero in paginas:
+        for i, numero in enumerate(paginas, 1):
+            if avisar:
+                avisar(f"  {rotulo} pag {numero} ({i}/{total})")
             recorte = pymupdf.open()
             recorte.insert_pdf(origem, from_page=numero - 1, to_page=numero - 1)
             temporario = caminho_pdf.parent / f".{caminho_pdf.stem}-p{numero}.pdf"
@@ -59,12 +62,23 @@ def _converter_com_docling(caminho_pdf: Path, paginas: list[int], ocr: bool,
     return saida
 
 
-def converter(caminho_pdf: Path, rota: dict[str, list[int]], device: str = "auto") -> str:
-    """Markdown do documento inteiro, paginas em ordem, cada uma precedida do marcador."""
-    paginas = {}
-    paginas |= _converter_nativas(caminho_pdf, rota["nativa"])
-    paginas |= _converter_com_docling(caminho_pdf, rota["complexa"], ocr=False, device=device)
-    paginas |= _converter_com_docling(caminho_pdf, rota["ocr"], ocr=True, device=device)
+def converter(caminho_pdf: Path, rota: dict[str, list[int]], device: str = "auto",
+              avisar=None, fast: bool = False) -> str:
+    """Markdown do documento inteiro, paginas em ordem, cada uma precedida do marcador.
+
+    fast=True: pula Docling, usa pymupdf4llm pra tudo. Rapido, mas paginas
+    escaneadas (OCR) saem vazias ou com lixo.
+    """
+    if fast:
+        todas = sorted(rota["nativa"] + rota["complexa"] + rota["ocr"])
+        paginas = _converter_nativas(caminho_pdf, todas)
+    else:
+        paginas = {}
+        paginas |= _converter_nativas(caminho_pdf, rota["nativa"])
+        paginas |= _converter_com_docling(caminho_pdf, rota["complexa"], ocr=False, device=device,
+                                          avisar=avisar, rotulo="docling")
+        paginas |= _converter_com_docling(caminho_pdf, rota["ocr"], ocr=True, device=device,
+                                          avisar=avisar, rotulo="ocr")
 
     partes = []
     for numero in sorted(paginas):
