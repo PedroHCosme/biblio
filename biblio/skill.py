@@ -55,7 +55,17 @@ Read only the returned range — not neighboring files. If you still need contex
 read the 2nd result too. If nothing answers, search again with different terms.
 (`--context window` returns only the exact matched chunk, shorter.)
 
-**3. Empty search? Go to the index terms.**
+**3. Found what you needed? Tell biblio.**
+
+After reading a result that answered your question:
+
+```bash
+{command} hit "<the path:start-end line from the search result>"
+```
+
+This improves future search ranking. Skip it if the result was not useful.
+
+**4. Empty search? Go to the index terms.**
 
 ```bash
 grep -A4 -i "<term>" <bibliotheca>/INDEX.md
@@ -64,7 +74,7 @@ grep -A4 -i "<term>" <bibliotheca>/INDEX.md
 The `**Terms:**` line in each block is the safety net for exact identifiers
 ("NBR 6118", "9.4.2", part name) that semantic search misses.
 
-**4. Never read the entire `INDEX.md`.** Two hundred documents yield 40k tokens.
+**5. Never read the entire `INDEX.md`.** Two hundred documents yield 40k tokens.
 It was written for `grep`, not for reading.
 
 ## Other commands
@@ -75,6 +85,8 @@ It was written for `grep`, not for reading.
 | `biblio search "x" --doc <name>` | Restrict to one document |
 | `biblio search "x" --lib <path>` | Restrict to one bibliotheca |
 | `biblio search "x" --context window` | Minimal chunk instead of full section |
+| `biblio search "x" --no-frecency` | Disable frecency boost for this search |
+| `biblio hit "<path:start-end>"` | Record that a result was useful (improves ranking) |
 | `biblio libs` | List registered bibliothecas |
 | `biblio status` | What was ingested, what failed, what's pending |
 

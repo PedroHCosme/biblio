@@ -12,6 +12,47 @@ def _confirm(text: str) -> bool:
     return input(f"{text} [y/N] ").strip().lower() in ("y", "yes", "s", "sim")
 
 
+def _hit(pointer: str) -> int:
+    import re
+    from biblio import db
+
+    match = re.match(r"^(.+):(\d+)-(\d+)$", pointer)
+    if not match:
+        print(f"invalid pointer format: {pointer}", file=sys.stderr)
+        return 1
+    filepath, line_start = Path(match.group(1)).resolve(), int(match.group(2))
+
+    bibliotheca = None
+    for parent in filepath.parents:
+        if (parent / db.DB_FILE).exists():
+            bibliotheca = parent
+            break
+    if bibliotheca is None:
+        print(f"no bibliotheca found for: {filepath}", file=sys.stderr)
+        return 1
+
+    con = db.connect(bibliotheca)
+    try:
+        rel = filepath.relative_to(bibliotheca)
+        doc, file = rel.parts[0], rel.parts[1]
+        row = con.execute(
+            "SELECT id FROM chunks WHERE doc = ? AND file = ? AND line_start = ?",
+            (doc, file, line_start)).fetchone()
+        if row is None:
+            print(f"chunk not found: {doc}/{file} at line {line_start}",
+                  file=sys.stderr)
+            return 1
+        vec_f16 = db.get_last_query_vec(con)
+        if vec_f16 is None:
+            print("no previous search found in this bibliotheca", file=sys.stderr)
+            return 1
+        session = db.get_session(con)
+        db.record_access(con, row["id"], vec_f16, weight=5, session_id=session)
+    finally:
+        con.close()
+    return 0
+
+
 def _status(args) -> int:
     bibliotheca = root(args.out)
     if not bibliotheca.exists():
@@ -60,6 +101,8 @@ def main(argv=None) -> int:
     b.add_argument("--context", choices=("section", "window"), default="section",
                    help="section: entire slice (default); window: only the matched chunk")
     b.add_argument("--json", action="store_true")
+    b.add_argument("--no-frecency", action="store_true",
+                   help="disable frecency boost and access recording for this search")
 
     i = sub.add_parser("index", help="regenerate INDEX.md and CLAUDE.md without reprocessing")
     i.add_argument("--summary", dest="summary_mode", action="store_const", const="yes",
@@ -72,6 +115,9 @@ def main(argv=None) -> int:
     sub.add_parser("skill", help="install the Claude Code skill (without creating shortcut)")
     sub.add_parser("gui", help="launch the localhost interface")
     sub.add_parser("shortcut", help="create the desktop shortcut")
+    h = sub.add_parser("hit", help="record an explicit access (weight 5) for a search result")
+    h.add_argument("pointer", help='path:start-end as returned by biblio search')
+
     sub.add_parser("version", help="show installed version")
     sub.add_parser("update", help="update to the latest GitHub version")
 
@@ -95,7 +141,8 @@ def main(argv=None) -> int:
 
     if args.command == "search":
         results = search.search(args.query, output=args.lib or args.out,
-                                top=args.top, doc=args.doc, context=args.context)
+                                top=args.top, doc=args.doc, context=args.context,
+                                no_frecency=args.no_frecency)
         print(json.dumps(results, ensure_ascii=False) if args.json
               else search.format_results(results))
         return 0
@@ -105,6 +152,9 @@ def main(argv=None) -> int:
         skill.install()
         print(dest)
         return 0
+
+    if args.command == "hit":
+        return _hit(args.pointer)
 
     if args.command == "status":
         return _status(args)

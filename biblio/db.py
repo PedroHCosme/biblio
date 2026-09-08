@@ -3,6 +3,7 @@
 ponytail: brute-force vector search in numpy. For the measured corpus size
 it's instant and avoids a native extension dependency.
 """
+import base64
 import sqlite3
 from pathlib import Path
 
@@ -29,6 +30,14 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
   text, section, content='chunks', content_rowid='id',
   tokenize="unicode61 remove_diacritics 2"
 );
+CREATE TABLE IF NOT EXISTS accesses (
+    id         INTEGER PRIMARY KEY,
+    chunk_id   INTEGER NOT NULL REFERENCES chunks(id) ON DELETE CASCADE,
+    query_vec  BLOB NOT NULL,
+    weight     INTEGER NOT NULL,
+    session_id INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_accesses_chunk ON accesses(chunk_id);
 """
 
 
@@ -47,9 +56,12 @@ def _migrate_schema(con: sqlite3.Connection) -> None:
 
 def connect(bibliotheca: Path) -> sqlite3.Connection:
     con = sqlite3.connect(bibliotheca / DB_FILE)
+    con.execute("PRAGMA foreign_keys = ON")
     con.row_factory = sqlite3.Row
     _migrate_schema(con)
     con.executescript(SCHEMA)
+    con.execute("INSERT OR IGNORE INTO config VALUES('session_counter', '0')")
+    con.commit()
     _check_model(con)
     return con
 
@@ -66,6 +78,104 @@ def _check_model(con: sqlite3.Connection) -> None:
                 f"This bibliotheca was indexed with '{saved[0]}', and this biblio uses "
                 f"'{MODEL}'. The vectors are not comparable.\n"
                 f"Reindex with: biblio add <source> --force")
+
+
+ACCESS_CAP = 20
+HALF_LIFE = 7
+SIMILARITY_THRESHOLD = 0.3
+PRUNE_THRESHOLD = 0.01
+
+
+def get_session(con: sqlite3.Connection) -> int:
+    row = con.execute("SELECT value FROM config WHERE key='session_counter'").fetchone()
+    return int(row[0]) if row else 0
+
+
+def increment_session(con: sqlite3.Connection) -> int:
+    with con:
+        con.execute("UPDATE config SET value = CAST(value AS INTEGER) + 1 "
+                    "WHERE key = 'session_counter'")
+    return get_session(con)
+
+
+def record_access(con: sqlite3.Connection, chunk_id: int, query_vec_f16: bytes,
+                  weight: int, session_id: int) -> None:
+    with con:
+        con.execute("INSERT INTO accesses(chunk_id, query_vec, weight, session_id) "
+                    "VALUES(?, ?, ?, ?)",
+                    (chunk_id, query_vec_f16, weight, session_id))
+        count = con.execute("SELECT COUNT(*) FROM accesses WHERE chunk_id = ?",
+                            (chunk_id,)).fetchone()[0]
+        if count > ACCESS_CAP:
+            con.execute("DELETE FROM accesses WHERE id IN ("
+                        "SELECT id FROM accesses WHERE chunk_id = ? "
+                        "ORDER BY session_id ASC LIMIT ?)",
+                        (chunk_id, count - ACCESS_CAP))
+
+
+def save_last_query_vec(con: sqlite3.Connection, vec_f16: bytes) -> None:
+    encoded = base64.b64encode(vec_f16).decode()
+    with con:
+        con.execute("INSERT OR REPLACE INTO config VALUES('last_query_vec', ?)",
+                    (encoded,))
+
+
+def get_last_query_vec(con: sqlite3.Connection) -> bytes | None:
+    row = con.execute("SELECT value FROM config WHERE key='last_query_vec'").fetchone()
+    return base64.b64decode(row[0]) if row else None
+
+
+def frecency_score(accesses: list, query_vec: np.ndarray,
+                   current_session: int, half_life: int = HALF_LIFE
+                   ) -> tuple[float, list[int]]:
+    score = 0.0
+    prune_ids = []
+    for acc in accesses:
+        stored = np.frombuffer(acc["query_vec"], dtype="float16").astype("float32")
+        similarity = float(query_vec @ stored)
+        if similarity < SIMILARITY_THRESHOLD:
+            continue
+        age = current_session - acc["session_id"]
+        decay = 2.0 ** (-age / half_life)
+        contribution = acc["weight"] * similarity * decay
+        if contribution < PRUNE_THRESHOLD:
+            prune_ids.append(acc["id"])
+            continue
+        score += contribution
+    return score, prune_ids
+
+
+def ranked_by_frecency(con: sqlite3.Connection, query_vec: np.ndarray,
+                       candidates: int, doc: str | None = None) -> list[int]:
+    session = get_session(con)
+    sql = ("SELECT DISTINCT a.chunk_id FROM accesses a "
+           "JOIN chunks c ON c.id = a.chunk_id")
+    params: list = []
+    if doc:
+        sql += " WHERE c.doc = ?"
+        params.append(doc)
+    chunk_ids = [r[0] for r in con.execute(sql, params).fetchall()]
+    if not chunk_ids:
+        return []
+
+    scores = {}
+    all_prune = []
+    for cid in chunk_ids:
+        accs = [dict(r) for r in con.execute(
+            "SELECT id, query_vec, weight, session_id FROM accesses "
+            "WHERE chunk_id = ?", (cid,)).fetchall()]
+        sc, prune = frecency_score(accs, query_vec, session)
+        if sc > 0:
+            scores[cid] = sc
+        all_prune.extend(prune)
+
+    if all_prune:
+        placeholders = ",".join("?" * len(all_prune))
+        with con:
+            con.execute(f"DELETE FROM accesses WHERE id IN ({placeholders})",
+                        all_prune)
+
+    return sorted(scores, key=scores.get, reverse=True)[:candidates]
 
 
 def replace_document(con: sqlite3.Connection, doc: str, chunks: list[dict],

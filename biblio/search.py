@@ -3,6 +3,8 @@ import re
 import unicodedata
 from pathlib import Path
 
+import numpy as np
+
 from biblio import db, embed
 from biblio.paths import known_bibliothecas, register, all_libs
 
@@ -40,10 +42,11 @@ def _interval(filepath: str, row: dict, context: str) -> tuple[int, int]:
 
 
 def search(query: str, output=None, top: int = 5, doc: str | None = None,
-           context: str = "section") -> list[dict]:
+           context: str = "section", no_frecency: bool = False) -> list[dict]:
     """Covers all registered bibliothecas, unless `output` (path or list) restricts."""
     candidates = top * MULTIPLE
     vector = embed.vectorize_query(query)
+    vec_f16 = np.asarray(vector, dtype="float16").tobytes()
 
     lists: list[list] = []
     rows: dict = {}
@@ -58,8 +61,17 @@ def search(query: str, output=None, top: int = 5, doc: str | None = None,
             register(bibliotheca)
         con = db.connect(bibliotheca)
         try:
+            if not no_frecency:
+                db.increment_session(con)
+
             rankings = [db.search_vector(con, vector, candidates, doc),
                         db.search_fts(con, query, candidates, doc)]
+
+            if not no_frecency:
+                frecency_ids = db.ranked_by_frecency(con, vector, candidates, doc)
+                if frecency_ids:
+                    rankings.append(frecency_ids)
+
             for chunk_id, row in db.details(
                     con, list({i for r in rankings for i in r})).items():
                 rows[(bibliotheca, chunk_id)] = row
@@ -77,6 +89,7 @@ def search(query: str, output=None, top: int = 5, doc: str | None = None,
                     BONUS_HEADING * len(match) / len(q_tokens)
 
     results: list[dict] = []
+    result_keys: list[tuple[Path, int]] = []
     seen: set[str] = set()
     for (bibliotheca, chunk_id), score in sorted(scored.items(),
                                                  key=lambda p: -p[1]):
@@ -93,8 +106,25 @@ def search(query: str, output=None, top: int = 5, doc: str | None = None,
             "section": row["section"], "line_start": start,
             "line_end": end, "score": round(score, 4),
         })
+        result_keys.append((bibliotheca, chunk_id))
         if len(results) == top:
             break
+
+    if not no_frecency and result_keys:
+        by_lib: dict[Path, list[int]] = {}
+        for bib, cid in result_keys:
+            by_lib.setdefault(bib, []).append(cid)
+        for bib, cids in by_lib.items():
+            con = db.connect(bib)
+            try:
+                session = db.get_session(con)
+                for cid in cids:
+                    db.record_access(con, cid, vec_f16, weight=1,
+                                     session_id=session)
+                db.save_last_query_vec(con, vec_f16)
+            finally:
+                con.close()
+
     return results
 
 
