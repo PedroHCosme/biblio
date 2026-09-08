@@ -62,7 +62,7 @@ Reciprocal Rank Fusion, deduplicated per file, returning the best pointer for
 each. Cross-lingual works: a Portuguese question reaches an English datasheet in
 the same library, and vice-versa.
 
-## Tech
+## Stack
 
 Python 3.12 · PyMuPDF + `pymupdf4llm` · Docling (+ RapidOCR) ·
 `sentence-transformers` (`paraphrase-multilingual-MiniLM-L12-v2`, 384-dim,
