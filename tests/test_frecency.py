@@ -255,6 +255,25 @@ def test_cli_hit_records_access(synthetic_bibliotheca, monkeypatch):
         con.close()
 
 
+def test_cli_hit_accepts_section_pointer(synthetic_bibliotheca, monkeypatch):
+    """A pointer straight from `biblio search` output (section interval, starts
+    at line 1) must resolve to the file's chunk, not fail on line_start."""
+    monkeypatch.setattr("biblio.paths.REGISTRY",
+                        synthetic_bibliotheca.parent / "bibliothecas.txt")
+    results = search("ancoragem", output=synthetic_bibliotheca, top=1)
+    assert results
+    pointer = f"{results[0]['path']}:{results[0]['line_start']}-{results[0]['line_end']}"
+    assert pointer.split(":")[-1].startswith("1-")  # section interval
+    assert cli_main(["hit", pointer]) == 0
+
+    con = db.connect(synthetic_bibliotheca)
+    try:
+        assert con.execute(
+            "SELECT COUNT(*) FROM accesses WHERE weight = 5").fetchone()[0] >= 1
+    finally:
+        con.close()
+
+
 def test_cli_no_frecency_flag(synthetic_bibliotheca, capsys):
     result = cli_main(["search", "ancoragem",
                        "--lib", str(synthetic_bibliotheca),

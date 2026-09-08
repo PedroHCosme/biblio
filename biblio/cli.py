@@ -20,7 +20,8 @@ def _hit(pointer: str) -> int:
     if not match:
         print(f"invalid pointer format: {pointer}", file=sys.stderr)
         return 1
-    filepath, line_start = Path(match.group(1)).resolve(), int(match.group(2))
+    filepath = Path(match.group(1)).resolve()
+    pstart, pend = int(match.group(2)), int(match.group(3))
 
     bibliotheca = None
     for parent in filepath.parents:
@@ -35,12 +36,19 @@ def _hit(pointer: str) -> int:
     try:
         rel = filepath.relative_to(bibliotheca)
         doc, file = rel.parts[0], rel.parts[1]
+        # search pointers use section intervals (often 1..N), not the raw chunk
+        # range — rank an exact match first, then the chunk enclosing pstart,
+        # then any chunk inside [pstart, pend], then the file's first chunk.
         row = con.execute(
-            "SELECT id FROM chunks WHERE doc = ? AND file = ? AND line_start = ?",
-            (doc, file, line_start)).fetchone()
+            "SELECT id FROM chunks WHERE doc = ? AND file = ? "
+            "ORDER BY CASE "
+            " WHEN line_start = ? AND line_end = ? THEN 0 "
+            " WHEN ? BETWEEN line_start AND line_end THEN 1 "
+            " WHEN line_start BETWEEN ? AND ? THEN 2 ELSE 3 END, line_start "
+            "LIMIT 1",
+            (doc, file, pstart, pend, pstart, pstart, pend)).fetchone()
         if row is None:
-            print(f"chunk not found: {doc}/{file} at line {line_start}",
-                  file=sys.stderr)
+            print(f"chunk not found: {doc}/{file}", file=sys.stderr)
             return 1
         vec_f16 = db.get_last_query_vec(con)
         if vec_f16 is None:
