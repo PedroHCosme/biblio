@@ -111,31 +111,80 @@ biblio index                # backfill summaries for documents already ingested
 `biblio add <source> --force` to regenerate everything. On a GPU box you can bump
 the model to `qwen3:4b` in `biblio/ollama.py` for slightly better summaries.
 
-## Use
+## CLI
 
-```bash
-biblio gui                                   # ingestion panel (or the shortcut)
-biblio add ~/Documents/standards             # a file or a whole folder (recursive)
-biblio add ~/Documents/standards --out physics   # a named library, one subject each
-biblio search "rotor bar equation"           # covers every known library
-biblio search "slip" --lib physics --top 10  # scope to one library
-biblio search "torque" --doc aula-9 --json   # scope to one document, machine output
-biblio index                                 # regenerate INDEX.md / CLAUDE.md
-biblio status                                # what went in, what failed, what's pending
-biblio libs                                  # registered libraries
+```
+biblio [--out <library>] <command> [options]
 ```
 
-Re-running `biblio add` on a folder is cheap and safe: unchanged files are
-skipped by content hash, only new material is processed. A password-protected or
-corrupt PDF in a batch is marked `failed` and the batch continues.
+`--out` selects the library to act on. It accepts a **name** (stored under
+`~/biblio/<slug>`) or a **path**. Omit it and commands act on the default
+library, `~/biblio/geral`. `--out` goes before the command.
+
+### `biblio add <path>` — ingest
+
+```bash
+biblio add report.pdf                         # one file (.pdf, .md or .txt)
+biblio add ~/Documents/standards              # a folder, recursive
+biblio add ~/Documents/standards --out physics   # into a named library
+biblio add ~/Documents/standards --force      # reprocess even if unchanged
+biblio add scan.pdf --device cuda             # auto | cpu | cuda for Docling
+```
+
+Re-running on a folder is cheap and safe: unchanged files are skipped by SHA-256,
+only new or edited files are processed. A password-protected or corrupt PDF in a
+batch is marked `failed` and the batch continues. Exit code is `1` if anything
+failed, `0` otherwise. After a successful add, `INDEX.md`/`CLAUDE.md` are
+regenerated and the Claude Code skill is (re)installed.
+
+### `biblio search "<query>"` — the core command
+
+```bash
+biblio search "synchronous speed of the rotating field"
+biblio search "slip"            --lib physics        # one library (name or path)
+biblio search "torque"          --doc aula-9         # one document
+biblio search "eddy losses"     --top 10             # more hits (default 5)
+biblio search "rotor bar"       --json               # machine-readable
+```
+
+With no `--lib`/`--out`, search covers **every registered library** on the
+machine. Output is one line per hit — **a pointer, never the text**:
+
+```
+C:\Users\you\biblio\nbr-6118\09-ancoragem.md:112-195  0.031  9.4 Comprimento de ancoragem
+└─ absolute path ────────────────────────┘ └ lines ┘  score  └ heading ────────────┘
+```
+
+Read the hit with `Read`/`sed`/an editor at `offset = 112`, `limit = 195 - 112 + 1`.
+`--json` emits `[{"caminho","doc","arquivo","secao","linha_ini","linha_fim","score"}, …]`.
+Empty result prints `nada encontrado`. Pointing `--lib` at a folder that isn't a
+biblio library is an error (not a silent zero), with the command to fix it.
+
+### Housekeeping
+
+```bash
+biblio index      # rebuild INDEX.md + CLAUDE.md, backfill pending summaries, reinstall skill
+biblio status     # per-document: pages/format, slice count, ok | failed | summary pending
+biblio libs       # registered libraries, most-recently-used first
+biblio gui        # Gradio ingestion panel on http://127.0.0.1:7860
+biblio shortcut   # desktop .lnk for the GUI + install the Claude Code skill
+```
+
+When semantic search misses an exact identifier ("NBR 6118", "9.4.2"), grep the
+index instead:
+
+```bash
+grep -A4 -i "NBR 6118" ~/biblio/<library>/INDEX.md
+```
+
+Each document is one block; the `**Terms:**` line (populated by Ollama) is the
+recovery path. Never read `INDEX.md` whole — it is built for `grep`.
 
 ### Getting the most out of it
 
-1. **Keep Ollama running during ingestion** — that populates the `Terms:` line
-   in `INDEX.md`, the fallback path for exact identifiers ("NBR 6118", "9.4.2")
-   that semantic search can miss.
-2. **One subject per library.** Search with no flag spans every library on the
-   machine; separate them and you can scope later.
+1. **Keep Ollama running during ingestion** — populates the `**Terms:**` line.
+2. **One subject per library** — search with no flag spans them all; separate them
+   and you can scope later with `--lib`.
 3. **Rewrite the query in domain terms.** "How much rebar to anchor?" searches
    badly; "anchorage length passive reinforcement" searches well.
 4. **Drill with `--doc`** once you've found the right document.
