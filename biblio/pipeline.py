@@ -72,6 +72,12 @@ def _processar_um(caminho: Path, biblioteca: Path, device: str, force: bool,
         avisar(f"{nome}: inalterado, pulando")
         return "pulado"
 
+    # colisao de slug: "Aula 1.pdf" e "aula-1.md" viram a mesma pasta. Sem isto o
+    # segundo sobrescreve o primeiro em silencio.
+    anterior = meta.ler(pasta).get("origem")
+    if anterior and anterior != str(caminho.resolve()):
+        avisar(f"{nome}: AVISO — mesmo nome que {Path(anterior).name}, sobrescrevendo")
+
     try:
         bruto, rota = _obter_texto(caminho, device, avisar, nome)
     except Exception as erro:  # PDF com senha, arquivo corrompido, encoding impossivel

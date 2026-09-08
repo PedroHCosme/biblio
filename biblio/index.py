@@ -44,7 +44,10 @@ def _bloco(pasta: Path, dados: dict) -> str:
         linhas.append(f"**Termos:** {', '.join(termos)}")
     secoes = sorted(p.stem for p in pasta.glob("[0-9]*.md"))
     if secoes:
-        linhas.append(f"**Secoes:** {' · '.join(secoes)}")
+        # ponytail: uma aula com 40 fatias despejava 40 slugs (20% do INDEX.md).
+        # 8 dao a ideia; quem quer a lista exata roda `biblio search --doc <nome>`.
+        mostra = secoes[:8] + ([f"… (+{len(secoes) - 8})"] if len(secoes) > 8 else [])
+        linhas.append(f"**Secoes:** {' · '.join(mostra)}")
     linhas.append(f"`{pasta.name}/`")
     return "\n".join(linhas) + "\n"
 

@@ -3,7 +3,14 @@ from pathlib import Path
 
 import pymupdf
 
-LIMIAR_CARACTERES = 200  # spec 4.1: abaixo disso a pagina e tratada como imagem
+# spec 4.1: abaixo disso a pagina e tratada como imagem (OCR).
+# Medido no acervo ELE085: 108 das 182 paginas roteadas para OCR com o corte em 200
+# tinham 120-199 caracteres nativos — e esse texto ERA o conteudo do slide (bullets
+# e equacoes). OCR delas relia os mesmos bullets a ~8s/pagina. Baixado para 120:
+# ingestao de uma aula OCR-pesada caiu 144s->82s, com MAIS texto indexado.
+# Slide com 120-199 ch nativos passa direto; scan de verdade (pagina quase vazia,
+# < 120) ainda vai para OCR.
+LIMIAR_CARACTERES = 120
 
 
 def rotear_pagina(n_caracteres: int, tem_tabela: bool) -> str:
