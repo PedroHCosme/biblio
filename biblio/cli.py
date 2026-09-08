@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from biblio import index, meta, pipeline, search, skill
-from biblio.paths import conhecidas_biblioteca, raiz
+from biblio.paths import conhecidas_bibliotheca, raiz
 
 
 def _perguntar(texto: str) -> bool:
@@ -13,11 +13,11 @@ def _perguntar(texto: str) -> bool:
 
 
 def _status(args) -> int:
-    biblioteca = raiz(args.out)
-    if not biblioteca.exists():
-        print(f"biblioteca vazia: {biblioteca}")
+    bibliotheca = raiz(args.out)
+    if not bibliotheca.exists():
+        print(f"bibliotheca vazia: {bibliotheca}")
         return 0
-    for pasta in sorted(p for p in biblioteca.iterdir() if p.is_dir()):
+    for pasta in sorted(p for p in bibliotheca.iterdir() if p.is_dir()):
         dados = meta.ler(pasta)
         if not dados:
             continue
@@ -33,7 +33,7 @@ def _status(args) -> int:
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="biblio",
                                 description="Camada de memoria documental para agentes")
-    p.add_argument("--out", help="pasta da biblioteca (padrao: ~/biblio)")
+    p.add_argument("--out", help="pasta da bibliotheca (padrao: ~/biblio)")
     sub = p.add_subparsers(dest="comando", required=True)
 
     a = sub.add_parser("add", help="ingere .pdf, .md ou .txt — arquivo ou pasta")
@@ -45,13 +45,13 @@ def main(argv=None) -> int:
     b.add_argument("consulta")
     b.add_argument("--top", type=int, default=5)
     b.add_argument("--doc", help="restringe a um documento")
-    b.add_argument("--lib", help="restringe a uma biblioteca: caminho ou nome "
+    b.add_argument("--lib", help="restringe a uma bibliotheca: caminho ou nome "
                                  "(padrao: todas as conhecidas)")
     b.add_argument("--json", action="store_true")
 
     sub.add_parser("index", help="regera INDEX.md e CLAUDE.md sem reprocessar")
     sub.add_parser("status", help="o que entrou, o que falhou, o que esta pendente")
-    sub.add_parser("libs", help="bibliotecas registradas")
+    sub.add_parser("libs", help="bibliothecas registradas")
     sub.add_parser("skill", help="instala a skill do Claude Code (sem criar atalho)")
     sub.add_parser("gui", help="sobe a interface em localhost")
     sub.add_parser("shortcut", help="cria o atalho na area de trabalho")
@@ -77,7 +77,7 @@ def main(argv=None) -> int:
 
     if args.comando == "index":
         destino = index.gerar(saida=args.out)
-        skill.instalar()  # biblioteca vinda de outra maquina entra na descricao aqui
+        skill.instalar()  # bibliotheca vinda de outra maquina entra na descricao aqui
         print(destino)
         return 0
 
@@ -85,7 +85,7 @@ def main(argv=None) -> int:
         return _status(args)
 
     if args.comando == "libs":
-        for caminho in conhecidas_biblioteca() or ["(nenhuma; rode `biblio add`)"]:
+        for caminho in conhecidas_bibliotheca() or ["(nenhuma; rode `biblio add`)"]:
             print(caminho)
         return 0
 

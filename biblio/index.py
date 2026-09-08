@@ -1,10 +1,10 @@
-"""Gera INDEX.md e CLAUDE.md a partir da biblioteca em disco. Nunca reprocessa original."""
+"""Gera INDEX.md e CLAUDE.md a partir da bibliotheca em disco. Nunca reprocessa original."""
 from pathlib import Path
 
 from biblio import meta, skill, summarize
 from biblio.paths import raiz, registrar
 
-CABECALHO = """# Biblioteca
+CABECALHO = """# Bibliotheca
 
 Indice para `grep`, nao para leitura. Um bloco por documento; a linha **Termos** e
 o caminho de recuperacao quando a busca semantica falha.
@@ -53,10 +53,10 @@ def _bloco(pasta: Path, dados: dict) -> str:
 
 
 def gerar(saida=None, resumir_pendentes: bool = True, avisar=print) -> Path:
-    biblioteca = raiz(saida)
-    biblioteca.mkdir(parents=True, exist_ok=True)  # `biblio index` antes do primeiro add
+    bibliotheca = raiz(saida)
+    bibliotheca.mkdir(parents=True, exist_ok=True)  # `biblio index` antes do primeiro add
     blocos = []
-    for pasta in sorted(p for p in biblioteca.iterdir() if p.is_dir()):
+    for pasta in sorted(p for p in bibliotheca.iterdir() if p.is_dir()):
         dados = meta.ler(pasta)
         if not dados:
             continue
@@ -71,12 +71,12 @@ def gerar(saida=None, resumir_pendentes: bool = True, avisar=print) -> Path:
         blocos.append(_bloco(pasta, dados))
 
     if blocos:
-        # Pasta com documentos e biblioteca desta maquina, mesmo que tenha vindo de
+        # Pasta com documentos e bibliotheca desta maquina, mesmo que tenha vindo de
         # outra: `biblio --out <pasta> index` e como uma copia entra na busca global.
         # Pasta vazia nao entra: sujaria a descricao da skill com um nome sem acervo.
-        registrar(biblioteca)
+        registrar(bibliotheca)
 
-    (biblioteca / "CLAUDE.md").write_text(skill.texto_claude_md(), encoding="utf-8")
-    destino = biblioteca / "INDEX.md"
+    (bibliotheca / "CLAUDE.md").write_text(skill.texto_claude_md(), encoding="utf-8")
+    destino = bibliotheca / "INDEX.md"
     destino.write_text(CABECALHO + "\n".join(blocos), encoding="utf-8")
     return destino

@@ -1,4 +1,4 @@
-"""Um arquivo SQLite dentro da propria biblioteca: FTS5 + vetores.
+"""Um arquivo SQLite dentro da propria bibliotheca: FTS5 + vetores.
 
 ponytail: busca vetorial por forca bruta em numpy. Para o tamanho de acervo medido
 na Tarefa 0.2 e instantanea e evita a dependencia de extensao nativa. Trocar por
@@ -33,8 +33,8 @@ CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
 """
 
 
-def conectar(biblioteca: Path) -> sqlite3.Connection:
-    con = sqlite3.connect(biblioteca / ARQUIVO)
+def conectar(bibliotheca: Path) -> sqlite3.Connection:
+    con = sqlite3.connect(bibliotheca / ARQUIVO)
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
     _conferir_modelo(con)
@@ -55,7 +55,7 @@ def _conferir_modelo(con: sqlite3.Connection) -> None:
             con.execute("INSERT INTO config VALUES('modelo', ?)", (MODELO,))
         elif gravado[0] != MODELO:
             raise SystemExit(
-                f"Esta biblioteca foi indexada com '{gravado[0]}', e este biblio usa "
+                f"Esta bibliotheca foi indexada com '{gravado[0]}', e este biblio usa "
                 f"'{MODELO}'. Os vetores nao sao comparaveis.\n"
                 f"Reindexe com: biblio add <origem> --force")
 

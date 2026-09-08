@@ -201,7 +201,7 @@ recovery path. Never read `INDEX.md` whole — it is built for `grep`.
 
 ## Claude Code integration
 
-Nothing to wire up. The skill installs itself to `~/.claude/skills/biblioteca/`
+Nothing to wire up. The skill installs itself to `~/.claude/skills/bibliotheca/`
 on `biblio shortcut` and after every successful ingestion. In a fresh Claude
 Code session, a question a document can answer makes the agent run
 `biblio search` on its own — and read only the returned line range.

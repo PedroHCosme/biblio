@@ -3,7 +3,7 @@ import re
 import unicodedata
 
 from biblio import db, embed
-from biblio.paths import conhecidas_biblioteca, registrar, todas
+from biblio.paths import conhecidas_bibliotheca, registrar, todas
 
 K_RRF = 60      # constante classica do Reciprocal Rank Fusion
 MULTIPLO = 4    # cada lista traz top*4 antes da fusao, para a fusao ter o que fundir
@@ -22,7 +22,7 @@ def _tokens(texto: str) -> set[str]:
 def rrf(listas: list[list]) -> dict:
     """1/(K + posicao) por lista, somado. Dispensa normalizar cosseno contra BM25.
 
-    A chave e opaca: com varias bibliotecas ela e (biblioteca, id), porque id de
+    A chave e opaca: com varias bibliothecas ela e (bibliotheca, id), porque id de
     chunk so e unico dentro de um banco.
     """
     pontos: dict = {}
@@ -33,33 +33,33 @@ def rrf(listas: list[list]) -> dict:
 
 
 def buscar(consulta: str, saida=None, top: int = 5, doc: str | None = None) -> list[dict]:
-    """Cobre todas as bibliotecas registradas, salvo `saida` (caminho ou lista)."""
+    """Cobre todas as bibliothecas registradas, salvo `saida` (caminho ou lista)."""
     candidatos = top * MULTIPLO
     vetor = embed.vetorizar_consulta(consulta)
 
     listas: list[list] = []
     linhas: dict = {}
-    for biblioteca in todas(saida):
-        if not (biblioteca / db.ARQUIVO).exists():  # nao cria banco em pasta alheia
+    for bibliotheca in todas(saida):
+        if not (bibliotheca / db.ARQUIVO).exists():  # nao cria banco em pasta alheia
             if saida is None:
                 continue
             # Pasta pedida de proposito. Silencio aqui vira "zero resultados" sem
             # causa, e o agente conclui que o acervo nao sabe a resposta.
             raise SystemExit(
-                f'{biblioteca}: nao e uma biblioteca biblio (falta {db.ARQUIVO}).\n'
+                f'{bibliotheca}: nao e uma bibliotheca biblio (falta {db.ARQUIVO}).\n'
                 f'Passe o caminho da pasta, ou um nome de `biblio libs`.')
-        if saida is not None and str(biblioteca.resolve()) not in conhecidas_biblioteca():
+        if saida is not None and str(bibliotheca.resolve()) not in conhecidas_bibliotheca():
             # Usar uma pasta uma vez ja a torna conhecida desta maquina: uma copia
             # vinda de outro computador entra na busca global sem comando nenhum.
-            registrar(biblioteca)
-        con = db.conectar(biblioteca)
+            registrar(bibliotheca)
+        con = db.conectar(bibliotheca)
         try:
             ranques = [db.buscar_vetorial(con, vetor, candidatos, doc),
                        db.buscar_fts(con, consulta, candidatos, doc)]
             for identificador, linha in db.detalhes(
                     con, list({i for r in ranques for i in r})).items():
-                linhas[(biblioteca, identificador)] = linha
-            listas += [[(biblioteca, i) for i in r] for r in ranques]
+                linhas[(bibliotheca, identificador)] = linha
+            listas += [[(bibliotheca, i) for i in r] for r in ranques]
         finally:
             con.close()
 
@@ -76,14 +76,14 @@ def buscar(consulta: str, saida=None, top: int = 5, doc: str | None = None) -> l
 
     achados: list[dict] = []
     vistos: set[str] = set()
-    for (biblioteca, identificador), ponto in sorted(pontuados.items(),
+    for (bibliotheca, identificador), ponto in sorted(pontuados.items(),
                                                      key=lambda p: -p[1]):
-        linha = linhas.get((biblioteca, identificador))
+        linha = linhas.get((bibliotheca, identificador))
         if linha is None:
             continue
-        # caminho absoluto: com varias bibliotecas, caminho relativo obrigaria o
+        # caminho absoluto: com varias bibliothecas, caminho relativo obrigaria o
         # agente a adivinhar a raiz certa (spec 6)
-        caminho = str((biblioteca / linha["doc"] / linha["arquivo"]).resolve())
+        caminho = str((bibliotheca / linha["doc"] / linha["arquivo"]).resolve())
         if caminho in vistos:  # spec 6.1: deduplicado por arquivo, fica o melhor
             continue
         vistos.add(caminho)

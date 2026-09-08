@@ -2,7 +2,7 @@
 
 Mede duas coisas: velocidade de indexacao e **recuperacao entre idiomas** —
 pergunta em portugues achando documento em ingles, e vice-versa. E o caso real de
-uma biblioteca com norma em portugues e datasheet em ingles na mesma pasta.
+uma bibliotheca com norma em portugues e datasheet em ingles na mesma pasta.
 """
 import time
 from sentence_transformers import SentenceTransformer, util

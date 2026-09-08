@@ -4,7 +4,7 @@ from biblio.pipeline import adicionar
 
 
 @pytest.fixture
-def biblioteca_ingerida(tmp_path, pdf_nativo):
+def bibliotheca_ingerida(tmp_path, pdf_nativo):
     saida = tmp_path / "lib"
     adicionar(pdf_nativo, saida=saida)
     return saida, pdf_nativo
@@ -15,26 +15,26 @@ def _assinatura(pasta):
             for p in sorted(pasta.rglob("*")) if p.is_file() and p.suffix != ".db"}
 
 
-def test_segunda_execucao_pula_o_documento(biblioteca_ingerida):
-    saida, pdf = biblioteca_ingerida
+def test_segunda_execucao_pula_o_documento(bibliotheca_ingerida):
+    saida, pdf = bibliotheca_ingerida
     assert adicionar(pdf, saida=saida) == {"ok": 0, "pulado": 1, "falhou": 0}
 
 
-def test_segunda_execucao_nao_reescreve_arquivo_nenhum(biblioteca_ingerida):
-    saida, pdf = biblioteca_ingerida
+def test_segunda_execucao_nao_reescreve_arquivo_nenhum(bibliotheca_ingerida):
+    saida, pdf = bibliotheca_ingerida
     antes = _assinatura(saida)
     adicionar(pdf, saida=saida)
     assert _assinatura(saida) == antes
 
 
-def test_force_reprocessa(biblioteca_ingerida):
-    saida, pdf = biblioteca_ingerida
+def test_force_reprocessa(bibliotheca_ingerida):
+    saida, pdf = bibliotheca_ingerida
     assert adicionar(pdf, saida=saida, force=True)["ok"] == 1
 
 
-def test_reprocessar_nao_duplica_chunks_no_banco(biblioteca_ingerida):
+def test_reprocessar_nao_duplica_chunks_no_banco(bibliotheca_ingerida):
     from biblio import db
-    saida, pdf = biblioteca_ingerida
+    saida, pdf = bibliotheca_ingerida
     con = db.conectar(saida)
     antes = con.execute("SELECT count(*) FROM chunks").fetchone()[0]
     con.close()

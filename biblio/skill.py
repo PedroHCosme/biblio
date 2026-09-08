@@ -1,15 +1,15 @@
 """O texto que ensina o agente, e a instalacao dele.
 
 A skill vive em ~/.claude/skills e cobre o Claude Code sem o usuario apontar nada.
-O CLAUDE.md vive dentro da pasta e cobre a biblioteca copiada para outra maquina,
+O CLAUDE.md vive dentro da pasta e cobre a bibliotheca copiada para outra maquina,
 o Claude Desktop, o Cowork e o ChatGPT. Mesmo protocolo, dois alcances.
 """
 import sys
 from pathlib import Path
 
-from biblio.paths import conhecidas_biblioteca
+from biblio.paths import conhecidas_bibliotheca
 
-DESTINO = Path.home() / ".claude" / "skills" / "biblioteca"
+DESTINO = Path.home() / ".claude" / "skills" / "bibliotheca"
 MAX_NOMES = 8  # ponytail: descricao e contexto permanente; nao vire lista de 50 pastas
 
 
@@ -67,7 +67,7 @@ garantia". Se as linhas devolvidas nao responderem, busque de novo com outros te
 **3. Busca vazia? Va para os termos do indice.**
 
 ```bash
-grep -A4 -i "<termo>" <biblioteca>/INDEX.md
+grep -A4 -i "<termo>" <bibliotheca>/INDEX.md
 ```
 
 A linha `**Termos:**` de cada bloco e a rede de seguranca para identificadores
@@ -81,8 +81,8 @@ Ele foi escrito para `grep`, nao para leitura.
 | Comando | Para que |
 |---|---|
 | `biblio search "x" --doc <nome>` | Restringe a um documento |
-| `biblio search "x" --lib <caminho>` | Restringe a uma biblioteca |
-| `biblio libs` | Lista as bibliotecas registradas |
+| `biblio search "x" --lib <caminho>` | Restringe a uma bibliotheca |
+| `biblio libs` | Lista as bibliothecas registradas |
 | `biblio status` | O que entrou, o que falhou, o que esta pendente |
 
 ## Cuidados
@@ -91,10 +91,10 @@ Ele foi escrito para `grep`, nao para leitura.
   corrompido. Diga isso ao usuario antes de citar numero de la.
 - Todo arquivo comeca com frontmatter (`doc`, `secao`, `pai`, e `paginas` quando a
   origem era PDF). Use `paginas` para citar a pagina do original.
-- A biblioteca nao guarda o arquivo original; `_meta.yaml` guarda o caminho dele.
+- A bibliotheca nao guarda o arquivo original; `_meta.yaml` guarda o caminho dele.
 """
 
-CABECALHO_SKILL = """# Biblioteca de documentos
+CABECALHO_SKILL = """# Bibliotheca de documentos
 
 Acervo local indexado pelo `biblio`. Grande demais para ler: o protocolo abaixo
 existe para achar o paragrafo certo sem carregar o acervo.
@@ -106,23 +106,23 @@ shell. Nao encurte para `biblio` — nem todo shell tem o PATH do Windows.
 
 def _descricao() -> str:
     """A unica linha que fica em contexto o tempo todo, e por ela que o agente decide
-    se o acervo responde a pergunta. Os nomes reais das bibliotecas dizem mais que
+    se o acervo responde a pergunta. Os nomes reais das bibliothecas dizem mais que
     qualquer adjetivo: "controle-digital, normas-abnt" e informacao; "documentos
     tecnicos" e um chute que exclui o acervo de historia do usuario.
     """
-    nomes = [Path(c).name for c in conhecidas_biblioteca()[:MAX_NOMES]]
-    quais = f" (bibliotecas: {', '.join(nomes)})" if nomes else ""
+    nomes = [Path(c).name for c in conhecidas_bibliotheca()[:MAX_NOMES]]
+    quais = f" (bibliothecas: {', '.join(nomes)})" if nomes else ""
     return (f"Consultar o acervo de documentos do usuario{quais}. Use sempre que a "
             "pergunta puder ser respondida por um documento do acervo em vez de "
             "conhecimento geral.")
 
 
 def texto_skill() -> str:
-    """Nao e constante: a descricao muda quando o usuario cria uma biblioteca nova,
+    """Nao e constante: a descricao muda quando o usuario cria uma bibliotheca nova,
     e o caminho do executavel muda de maquina.
     """
     corpo = CABECALHO_SKILL + "\n" + PROTOCOLO.format(comando=_executavel(), escopo="")
-    return f"---\nname: biblioteca\ndescription: {_descricao()}\n---\n\n{corpo}"
+    return f"---\nname: bibliotheca\ndescription: {_descricao()}\n---\n\n{corpo}"
 
 
 def texto_claude_md() -> str:
@@ -130,14 +130,14 @@ def texto_claude_md() -> str:
     de onde a pasta esta.
 
     E o que faz "aponte o Claude para esta pasta" significar "consulte esta
-    biblioteca", e nao "consulte todas as registradas nesta maquina".
+    bibliotheca", e nao "consulte todas as registradas nesta maquina".
 
     **Sem caminho absoluto de proposito.** Gravar aqui o caminho da maquina que
     gerou o arquivo quebraria a pasta no instante em que ela fosse copiada ou
     movida — e quebraria em silencio. O agente sabe de onde leu este arquivo; e
     ele quem preenche o caminho.
     """
-    return f"""# Biblioteca biblio
+    return f"""# Bibliotheca biblio
 
 Esta pasta e um acervo de documentos indexado. **Nao a leia por varredura** — sao
 centenas de milhares de tokens. Use `biblio search`, que devolve ponteiros.
@@ -153,12 +153,18 @@ a ferramenta nao esta instalada — e **nao** caia em ler a pasta por varredura.
 {PROTOCOLO.format(comando='biblio', escopo=' --lib "<caminho desta pasta>"')}"""
 
 
+_DESTINO_ANTIGO = Path.home() / ".claude" / "skills" / "biblioteca"  # antes do nome latino
+
+
 def instalar(avisar=print) -> Path:
     """Sobrescreve a skill instalada. Idempotente, barato, roda a cada ingestao.
 
-    Roda depois de `registrar()`, para que a biblioteca recem-criada ja apareca na
+    Roda depois de `registrar()`, para que a bibliotheca recem-criada ja apareca na
     descricao.
     """
+    if _DESTINO_ANTIGO.is_dir():  # so deixa a skill nova
+        import shutil
+        shutil.rmtree(_DESTINO_ANTIGO, ignore_errors=True)
     DESTINO.mkdir(parents=True, exist_ok=True)
     alvo = DESTINO / "SKILL.md"
     texto = texto_skill()

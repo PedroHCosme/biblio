@@ -34,7 +34,7 @@ def pdf_misto(tmp_path):
 @pytest.fixture(autouse=True)
 def registro_isolado(tmp_path, monkeypatch):
     """Teste nunca escreve no registro real do usuario."""
-    monkeypatch.setattr("biblio.paths.REGISTRO", tmp_path / "bibliotecas.txt")
+    monkeypatch.setattr("biblio.paths.REGISTRO", tmp_path / "bibliothecas.txt")
 
 
 CORPUS = {
@@ -83,13 +83,13 @@ def _montar(raiz, nomes):
 
 
 @pytest.fixture(scope="session")
-def biblioteca_sintetica(tmp_path_factory):
+def bibliotheca_sintetica(tmp_path_factory):
     """Sessao inteira: o modelo de embedding carrega uma vez so."""
     return _montar(tmp_path_factory.mktemp("lib"),
                    ["nbr-6118-concreto", "nbr-7480-aco", "manual-inversor"])
 
 
 @pytest.fixture(scope="session")
-def biblioteca_secundaria(tmp_path_factory):
-    """A segunda biblioteca que o usuario cria noutra rodada (spec 6.0)."""
+def bibliotheca_secundaria(tmp_path_factory):
+    """A segunda bibliotheca que o usuario cria noutra rodada (spec 6.0)."""
     return _montar(tmp_path_factory.mktemp("lib2"), ["artigo-fadiga"])

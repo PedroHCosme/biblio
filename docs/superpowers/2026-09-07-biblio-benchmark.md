@@ -128,7 +128,7 @@ despeja 40 slugs. Candidata a corte (ver seção 8).
 | 3 | 2ª execução → `pulado`, não reescreve nada | ✅ (teste de idempotência) |
 | 4 | `search` acha o arquivo certo no top-3, caminho absoluto | ✅ 7/8; ⚠️ 1 caso em #5 |
 | 5 | Intervalo devolvido contém a seção do heading | ✅ **24/24** |
-| 6 | 2ª biblioteca alcançada pela busca sem flag | ✅ (coberto por `tests/test_search.py`) |
+| 6 | 2ª bibliotheca alcançada pela busca sem flag | ✅ (coberto por `tests/test_search.py`) |
 | 7–9 | GUI, atalho, skill se reinstala | ✅ (GUI ajustada p/ Gradio 6) |
 | 10–11 | Agente novo usa `biblio search` sozinho / `--lib` ao apontar a pasta | ⏳ manual (sessão nova de Claude Code) |
 | 12 | Portabilidade — copiar a pasta, sem conserto | ✅ (nenhum caminho absoluto dentro) |

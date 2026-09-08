@@ -62,10 +62,10 @@ def _obter_texto(caminho: Path, device: str, avisar, nome: str) -> tuple[str, di
     return converter(caminho, rota, device=device), rota
 
 
-def _processar_um(caminho: Path, biblioteca: Path, device: str, force: bool,
+def _processar_um(caminho: Path, bibliotheca: Path, device: str, force: bool,
                   avisar, resumir_com_ollama: bool = False) -> str:
     nome = slug(caminho.stem)
-    pasta = biblioteca / nome
+    pasta = bibliotheca / nome
     digest = meta.hash_arquivo(caminho)
 
     if not force and meta.ja_processado(pasta, digest):
@@ -101,7 +101,7 @@ def _processar_um(caminho: Path, biblioteca: Path, device: str, force: bool,
 
     avisar(f"{nome}: indexando")
     chunks = embed.chunks_do_documento(pasta)
-    con = db.conectar(biblioteca)
+    con = db.conectar(bibliotheca)
     try:
         # sem `with con:` aqui: substituir_documento ja abre a propria transacao
         db.substituir_documento(con, nome, chunks,
@@ -127,15 +127,15 @@ def adicionar(alvo: Path | str, saida: Path | str | None = None, device: str = "
 
     `avisar` e o unico canal de progresso: a GUI passa o seu.
     """
-    biblioteca = raiz(saida)
-    biblioteca.mkdir(parents=True, exist_ok=True)
+    bibliotheca = raiz(saida)
+    bibliotheca.mkdir(parents=True, exist_ok=True)
     resumir_com_ollama = ollama.garantir(perguntar) if perguntar else ollama.disponivel()
 
     contagem = {"ok": 0, "pulado": 0, "falhou": 0}
     for arquivo in _arquivos(Path(alvo)):
         # falha de um arquivo nunca aborta o lote (spec 9)
         try:
-            contagem[_processar_um(arquivo, biblioteca, device, force, avisar,
+            contagem[_processar_um(arquivo, bibliotheca, device, force, avisar,
                                    resumir_com_ollama)] += 1
         except Exception as erro:
             avisar(f"{arquivo.name}: FALHOU ({erro})")
@@ -144,5 +144,5 @@ def adicionar(alvo: Path | str, saida: Path | str | None = None, device: str = "
     if contagem["ok"] or contagem["pulado"]:
         # Registra so depois, e so se sobrou documento: um lote em que tudo falhou
         # poria uma pasta vazia no registro e o nome dela na descricao da skill.
-        registrar(biblioteca)
+        registrar(bibliotheca)
     return contagem

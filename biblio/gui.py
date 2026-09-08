@@ -24,12 +24,12 @@ def _escolher_pasta() -> str:
         raiz_tk.destroy()
 
 from biblio import index, meta, pipeline, skill
-from biblio.paths import BIBLIOTECA_PADRAO, conhecidas_biblioteca, raiz
+from biblio.paths import BIBLIOTHECA_PADRAO, conhecidas_bibliotheca, raiz
 
 
-def _exemplo_de_busca(biblioteca: Path) -> str:
+def _exemplo_de_busca(bibliotheca: Path) -> str:
     """Um termo real do que acabou de entrar, para o usuario nao ter que inventar um."""
-    for pasta in sorted((p for p in biblioteca.iterdir() if p.is_dir()),
+    for pasta in sorted((p for p in bibliotheca.iterdir() if p.is_dir()),
                         key=lambda p: p.stat().st_mtime, reverse=True):
         if termos := meta.ler(pasta).get("termos"):
             return termos[0]
@@ -45,11 +45,11 @@ def _processar(arquivos, pasta, destino, resumir, forcar):
         yield "Escolha arquivos (.pdf, .md, .txt) ou informe uma pasta."
         return
 
-    biblioteca = raiz(destino)  # nome vira ~/biblio/<slug>; caminho passa direto
+    bibliotheca = raiz(destino)  # nome vira ~/biblio/<slug>; caminho passa direto
     linhas, fila = [], []
     for alvo in alvos:
         contagem = pipeline.adicionar(
-            alvo, saida=biblioteca, force=forcar,
+            alvo, saida=bibliotheca, force=forcar,
             perguntar=(lambda _: True) if resumir else None,
             avisar=fila.append,
         )
@@ -59,7 +59,7 @@ def _processar(arquivos, pasta, destino, resumir, forcar):
                       f"{contagem['falhou']} falharam")
         yield "\n".join(linhas)
 
-    index.gerar(saida=biblioteca, resumir_pendentes=False)
+    index.gerar(saida=bibliotheca, resumir_pendentes=False)
     skill.instalar(avisar=linhas.append)
 
     # Este bloco e o passo em que a ferramenta passa a valer alguma coisa.
@@ -67,14 +67,14 @@ def _processar(arquivos, pasta, destino, resumir, forcar):
     linhas += [
         "",
         "─" * 60,
-        f"Biblioteca: {biblioteca.resolve()}",
+        f"Bibliotheca: {bibliotheca.resolve()}",
         "INDEX.md e CLAUDE.md atualizados. A skill do Claude Code esta instalada,",
         "entao ele ja sabe consultar — nao e preciso ensinar nada.",
         "",
         "Experimente, no Claude Code ou no terminal:",
-        f'    biblio search "{_exemplo_de_busca(biblioteca)}"',
+        f'    biblio search "{_exemplo_de_busca(bibliotheca)}"',
         "",
-        "Para um projeto usar so esta biblioteca, aponte esta pasta para o agente:",
+        "Para um projeto usar so esta bibliotheca, aponte esta pasta para o agente:",
         "o CLAUDE.md dela ja restringe a busca a este acervo.",
     ]
     yield "\n".join(linhas)
@@ -83,15 +83,15 @@ def _processar(arquivos, pasta, destino, resumir, forcar):
 def subir(saida=None, share: bool = False) -> None:
     # Nomes, nao caminhos: `raiz()` resolve os dois, e ninguem devia ter que digitar
     # "C:\\Users\\...\\biblio\\direito-constitucional" para guardar um PDF.
-    conhecidas = [Path(c).name for c in conhecidas_biblioteca()]
+    conhecidas = [Path(c).name for c in conhecidas_bibliotheca()]
     padrao = Path(saida).name if saida else (conhecidas[0] if conhecidas
-                                             else BIBLIOTECA_PADRAO.name)
+                                             else BIBLIOTHECA_PADRAO.name)
 
     with gr.Blocks(title="biblio") as tela:
         gr.Markdown("# biblio")
         destino = gr.Dropdown(
-            label="Biblioteca",
-            info="Um assunto por biblioteca. Digite um nome novo para comecar outra.",
+            label="Bibliotheca",
+            info="Um assunto por bibliotheca. Digite um nome novo para comecar outra.",
             choices=sorted({*conhecidas, padrao}), value=padrao,
             allow_custom_value=True,
         )
