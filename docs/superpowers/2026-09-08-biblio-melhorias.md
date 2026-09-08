@@ -36,7 +36,14 @@ Parser novo acha `TERMOS:` em qualquer posição, aceita `**negrito**` e lista c
 `/no_think` + `num_predict=400` + `qwen3:1.7b` + amostra 6k. Backfill dos 171
 resumos: **48 min** (era projetado em 9 h com o 4b).
 
-### 4. Ranking: notas-índice não poluem mais (efeito colateral do bônus de heading)
+### 4. Heading de slide repetido → uma fatia só — **43% menos fatias nos decks**
+
+Slide deck repete `## Tema` em cada slide do tópico. `slice.py` abria uma fatia
+por ocorrência: **197 das 450 fatias (43%)** do acervo eram nome repetido
+(`aula-6`: 39 de 47). Agora heading igual ao anterior — mesmo com caixa/pontuação
+diferente do OCR (compara por slug) — continua a fatia atual.
+**`aula-6`: 47 → 26 fatias.** Menos chunks no índice, menos quase-duplicatas no
+ranking, `**Secoes:**` legível. `feat: heading repetido de slide vira uma fatia so`.
 
 ### 5. `LIMIAR_CARACTERES` 200 → 120, `INDEX.md` enxuto, aviso de colisão de slug
 
@@ -151,6 +158,8 @@ tabela de `df` — barata de montar no `index.py` e guardar no `config` do banco
 | resumo por documento | ~180 s (qwen3:4b) | ~40 s (qwen3:1.7b) |
 | backfill 171 resumos | ~9 h projetado | **48 min** |
 | conversão de aula OCR-pesada (Aula 1) | 144 s | **82 s** (LIMIAR 120) |
+| ingestão dos 14 PDFs (478 pág) | ~38 min | ~28 min |
+| fatias de `aula-6` | 47 | **26** (dedup de heading) |
 | `**Secoes:**` de uma aula de 40 fatias | 40 slugs | 8 + "(+32)" |
 | busca (custo em token, 3 ponteiros) | ~60 tokens | inalterado |
 
