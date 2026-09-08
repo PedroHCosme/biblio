@@ -1,129 +1,117 @@
-"""Painel de ingestao. Chama pipeline.adicionar() e mostra o que ela avisa.
+"""Ingestion panel. Calls pipeline.ingest() and shows its progress.
 
-Sem busca, sem leitura, sem chat (spec 3, fora de escopo).
+No search, no reading, no chat.
 """
 from pathlib import Path
 
 import gradio as gr
 
 
-def _escolher_pasta() -> str:
-    """Abre o seletor de pastas nativo do sistema. Funciona porque o servidor Gradio
-    roda na propria maquina do usuario; o dialogo aparece na area de trabalho dele.
-    ponytail: tkinter e stdlib, sem dependencia nova.
-    """
+def _choose_folder() -> str:
+    """Opens the native folder picker."""
     import tkinter as tk
     from tkinter import filedialog
 
-    raiz_tk = tk.Tk()
-    raiz_tk.withdraw()
-    raiz_tk.attributes("-topmost", True)
+    root_tk = tk.Tk()
+    root_tk.withdraw()
+    root_tk.attributes("-topmost", True)
     try:
-        return filedialog.askdirectory(title="Escolha a pasta com os documentos") or ""
+        return filedialog.askdirectory(title="Choose the folder with documents") or ""
     finally:
-        raiz_tk.destroy()
+        root_tk.destroy()
 
 from biblio import index, meta, pipeline, skill
-from biblio.paths import BIBLIOTHECA_PADRAO, conhecidas_bibliotheca, raiz
+from biblio.paths import DEFAULT_BIBLIOTHECA, known_bibliothecas, root
 
 
-def _exemplo_de_busca(bibliotheca: Path) -> str:
-    """Um termo real do que acabou de entrar, para o usuario nao ter que inventar um."""
-    for pasta in sorted((p for p in bibliotheca.iterdir() if p.is_dir()),
-                        key=lambda p: p.stat().st_mtime, reverse=True):
-        if termos := meta.ler(pasta).get("termos"):
-            return termos[0]
-        return pasta.name.replace("-", " ")
-    return "sua pergunta aqui"
+def _search_example(bibliotheca: Path) -> str:
+    """A real term from what just went in, so the user doesn't have to invent one."""
+    for folder in sorted((p for p in bibliotheca.iterdir() if p.is_dir()),
+                         key=lambda p: p.stat().st_mtime, reverse=True):
+        if terms := meta.read(folder).get("terms"):
+            return terms[0]
+        return folder.name.replace("-", " ")
+    return "your query here"
 
 
-def _processar(arquivos, pasta, destino, resumir, forcar):
-    # gr.File com type padrao ("filepath") ja entrega str no Gradio >= 4, nao objeto
-    pasta = (pasta or "").strip().strip('"')  # "Copiar como caminho" do Windows poe aspas
-    alvos = list(arquivos or []) + ([pasta] if pasta else [])
-    if not alvos:
-        yield "Escolha arquivos (.pdf, .md, .txt) ou informe uma pasta."
+def _process(files, folder, dest, do_summary, force):
+    folder = (folder or "").strip().strip('"')
+    targets = list(files or []) + ([folder] if folder else [])
+    if not targets:
+        yield "Choose files (.pdf, .md, .txt) or provide a folder."
         return
 
-    bibliotheca = raiz(destino)  # nome vira ~/biblio/<slug>; caminho passa direto
-    linhas, fila = [], []
-    for alvo in alvos:
-        # checkbox marcada = consentiu com o download (~3 GB, dito no rotulo)
-        contagem = pipeline.adicionar(
-            alvo, saida=bibliotheca, force=forcar,
-            resumo="sim" if resumir else "nao",
-            perguntar=lambda _: True, avisar=fila.append,
+    bibliotheca = root(dest)
+    lines, queue = [], []
+    for target in targets:
+        count = pipeline.ingest(
+            target, output=bibliotheca, force=force,
+            summary="yes" if do_summary else "no",
+            ask=lambda _: True, warn=queue.append,
         )
-        linhas += fila
-        fila.clear()
-        linhas.append(f"→ {contagem['ok']} processados, {contagem['pulado']} inalterados, "
-                      f"{contagem['falhou']} falharam")
-        yield "\n".join(linhas)
+        lines += queue
+        queue.clear()
+        lines.append(f"→ {count['ok']} processed, {count['skipped']} unchanged, "
+                     f"{count['failed']} failed")
+        yield "\n".join(lines)
 
-    index.gerar(saida=bibliotheca, resumo="nao")
-    skill.instalar(avisar=linhas.append)
+    index.generate(output=bibliotheca, summary="no")
+    skill.install(warn=lines.append)
 
-    # Este bloco e o passo em que a ferramenta passa a valer alguma coisa.
-    # Ele fica dentro do produto, nao num README.
-    linhas += [
+    lines += [
         "",
         "─" * 60,
         f"Bibliotheca: {bibliotheca.resolve()}",
-        "INDEX.md e CLAUDE.md atualizados. A skill do Claude Code esta instalada,",
-        "entao ele ja sabe consultar — nao e preciso ensinar nada.",
+        "INDEX.md and CLAUDE.md updated. The Claude Code skill is installed,",
+        "so it already knows how to search — no setup needed.",
         "",
-        "Experimente, no Claude Code ou no terminal:",
-        f'    biblio search "{_exemplo_de_busca(bibliotheca)}"',
+        "Try it in Claude Code or the terminal:",
+        f'    biblio search "{_search_example(bibliotheca)}"',
         "",
-        "Para um projeto usar so esta bibliotheca, aponte esta pasta para o agente:",
-        "o CLAUDE.md dela ja restringe a busca a este acervo.",
+        "To restrict a project to this bibliotheca, point the agent to this folder:",
+        "the CLAUDE.md in it already restricts search to this corpus.",
     ]
-    yield "\n".join(linhas)
+    yield "\n".join(lines)
 
 
-def subir(saida=None, share: bool = False) -> None:
-    # Nomes, nao caminhos: `raiz()` resolve os dois, e ninguem devia ter que digitar
-    # "C:\\Users\\...\\biblio\\direito-constitucional" para guardar um PDF.
-    conhecidas = [Path(c).name for c in conhecidas_bibliotheca()]
-    padrao = Path(saida).name if saida else (conhecidas[0] if conhecidas
-                                             else BIBLIOTHECA_PADRAO.name)
+def launch(output=None, share: bool = False) -> None:
+    known = [Path(c).name for c in known_bibliothecas()]
+    default = Path(output).name if output else (known[0] if known
+                                                else DEFAULT_BIBLIOTHECA.name)
 
-    from biblio.version_check import _versao_instalada, _versao_remota
-    v_local, v_remota = _versao_instalada(), _versao_remota()
-    aviso_versao = (f"  **Versao {v_remota} disponivel** (instalada: {v_local})"
-                    f" — rode `biblio update` no terminal para atualizar."
-                    if v_remota and v_remota != v_local else "")
+    from biblio.version_check import _installed_version, _remote_version
+    v_local, v_remote = _installed_version(), _remote_version()
+    version_notice = (f"  **Version {v_remote} available** (installed: {v_local})"
+                      f" — run `biblio update` in the terminal to upgrade."
+                      if v_remote and v_remote != v_local else "")
 
-    with gr.Blocks(title="biblio") as tela:
-        gr.Markdown(f"# biblio{aviso_versao}")
-        destino = gr.Dropdown(
+    with gr.Blocks(title="biblio") as app:
+        gr.Markdown(f"# biblio{version_notice}")
+        dest = gr.Dropdown(
             label="Bibliotheca",
-            info="Um assunto por bibliotheca. Digite um nome novo para comecar outra.",
-            choices=sorted({*conhecidas, padrao}), value=padrao,
+            info="One topic per bibliotheca. Type a new name to start another.",
+            choices=sorted({*known, default}), value=default,
             allow_custom_value=True,
         )
-        arquivos = gr.File(label="Arquivos", file_count="multiple",
-                           file_types=[".pdf", ".md", ".txt"])
-        # O navegador nao entrega caminho de pasta por upload e o FileExplorer do
-        # Gradio 6 nao seleciona diretorio. O botao abre o seletor nativo do SO
-        # (servidor roda na maquina do usuario); o campo fica editavel para ajuste.
+        file_input = gr.File(label="Files", file_count="multiple",
+                             file_types=[".pdf", ".md", ".txt"])
         with gr.Row():
-            pasta = gr.Textbox(
-                label="ou uma pasta inteira", scale=4,
-                placeholder=r"clique em Escolher pasta  —  ou cole o caminho aqui",
-                info="Processa todos os .pdf, .md e .txt da pasta e subpastas.")
-            escolher = gr.Button("📁 Escolher pasta", scale=1)
-        escolher.click(_escolher_pasta, None, pasta)
+            folder = gr.Textbox(
+                label="or an entire folder", scale=4,
+                placeholder=r"click Choose folder  —  or paste the path here",
+                info="Processes all .pdf, .md and .txt in the folder and subfolders.")
+            choose_btn = gr.Button("📁 Choose folder", scale=1)
+        choose_btn.click(_choose_folder, None, folder)
         with gr.Row():
-            resumir = gr.Checkbox(
+            do_summary = gr.Checkbox(
                 value=False,
-                label="Gerar resumo e palavras-chave de cada documento",
-                info="Opcional. Usa um modelo local (Ollama). Marcar autoriza baixar "
-                     "~3 GB na primeira vez. Sem isto a busca funciona igual — só falta "
-                     "a linha de termos do índice.")
-            forcar = gr.Checkbox(label="Reprocessar mesmo sem mudanca")
-        botao = gr.Button("Adicionar documentos", variant="primary")
-        progresso = gr.Textbox(label="Progresso", lines=18, max_lines=18, autoscroll=True)
+                label="Generate summary and keywords for each document",
+                info="Optional. Uses a local model (Ollama). Checking this authorizes "
+                     "downloading ~3 GB the first time. Without this, search works the "
+                     "same — only the terms line in the index is missing.")
+            force = gr.Checkbox(label="Reprocess even without changes")
+        btn = gr.Button("Add documents", variant="primary")
+        progress = gr.Textbox(label="Progress", lines=18, max_lines=18, autoscroll=True)
 
-        botao.click(_processar, [arquivos, pasta, destino, resumir, forcar], progresso)
-    tela.launch(inbrowser=True, share=share)
+        btn.click(_process, [file_input, folder, dest, do_summary, force], progress)
+    app.launch(inbrowser=True, share=share)

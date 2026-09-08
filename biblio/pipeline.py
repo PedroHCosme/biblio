@@ -1,171 +1,160 @@
-"""adicionar(): a unica porta de entrada. CLI e GUI sao cascas sobre ela."""
+"""ingest(): the single entry point. CLI and GUI are shells over it."""
 import re
 from pathlib import Path
 
 import yaml
 
 from biblio import db, embed, meta, ollama, summarize
-from biblio.convert import converter
-from biblio.normalize import normalizar
-from biblio.paths import raiz, registrar, slug
-from biblio.slice import fatiar
-from biblio.triage import triar
+from biblio.convert import convert
+from biblio.normalize import normalize
+from biblio.paths import root, register, slug
+from biblio.slice import slice_doc
+from biblio.triage import triage
+
+EXTENSIONS = (".pdf", ".md", ".txt")
 
 
-EXTENSOES = (".pdf", ".md", ".txt")
+def _files(target: Path) -> list[Path]:
+    if target.is_dir():
+        return sorted(p for p in target.rglob("*") if p.suffix.lower() in EXTENSIONS)
+    return [target]
 
 
-def _arquivos(alvo: Path) -> list[Path]:
-    if alvo.is_dir():
-        return sorted(p for p in alvo.rglob("*") if p.suffix.lower() in EXTENSOES)
-    return [alvo]
+def _frontmatter(s, doc: str) -> str:
+    fields = {"doc": doc, "section": s.section}
+    if s.page_start is not None:
+        fields["pages"] = [s.page_start, s.page_end]
+    fields["parent"] = s.parent
+    return "---\n" + yaml.safe_dump(fields, allow_unicode=True, sort_keys=False) + "---\n\n"
 
 
-def _frontmatter(fatia, doc: str) -> str:
-    campos = {"doc": doc, "secao": fatia.secao}
-    if fatia.pagina_ini is not None:  # origem sem paginas nao inventa o campo
-        campos["paginas"] = [fatia.pagina_ini, fatia.pagina_fim]
-    campos["pai"] = fatia.pai
-    return "---\n" + yaml.safe_dump(campos, allow_unicode=True, sort_keys=False) + "---\n\n"
+_SOURCE_FRONTMATTER = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n", re.S)
 
 
-_FRONTMATTER_FONTE = re.compile(r"\A---\r?\n(.*?)\r?\n---\r?\n", re.S)
-
-
-def _sem_frontmatter_de_fonte(texto: str) -> str:
-    """Vault do Obsidian: todo .md ja vem com frontmatter YAML proprio. Sem tirar,
-    ele empilha com o frontmatter do biblio e vira prosa YAML indexada. `aliases` e
-    `tags` sao sinonimos deliberados do autor, entao viram uma linha visivel e
-    pesquisavel em vez de sumir.
-    """
-    m = _FRONTMATTER_FONTE.match(texto)
+def _strip_source_frontmatter(text: str) -> str:
+    """Obsidian vault: every .md already has its own YAML frontmatter."""
+    m = _SOURCE_FRONTMATTER.match(text)
     if not m:
-        return texto
+        return text
     try:
-        dados = yaml.safe_load(m.group(1)) or {}
+        data = yaml.safe_load(m.group(1)) or {}
     except yaml.YAMLError:
-        dados = {}
-    termos = dados.get("aliases", []) + dados.get("tags", []) if isinstance(dados, dict) else []
-    linha = f"*{', '.join(map(str, termos))}*\n\n" if termos else ""
-    return linha + texto[m.end():]
+        data = {}
+    terms = data.get("aliases", []) + data.get("tags", []) if isinstance(data, dict) else []
+    line = f"*{', '.join(map(str, terms))}*\n\n" if terms else ""
+    return line + text[m.end():]
 
 
-def _obter_texto(caminho: Path, device: str, avisar, nome: str,
-                 fast: bool = False) -> tuple[str, dict]:
-    """(markdown bruto, rota). Entrada que ja e texto pula triagem e conversao."""
-    if caminho.suffix.lower() != ".pdf":
-        avisar(f"{nome}: ja e texto, pulando conversao")
-        bruto = caminho.read_text(encoding="utf-8", errors="replace")
-        return _sem_frontmatter_de_fonte(bruto), {}
-    avisar(f"{nome}: triando")
-    rota = triar(caminho)
-    n_nat, n_cplx, n_ocr = len(rota["nativa"]), len(rota["complexa"]), len(rota["ocr"])
-    partes = []
+def _get_text(path: Path, device: str, warn, name: str,
+              fast: bool = False) -> tuple[str, dict]:
+    """(raw markdown, route). Input that's already text skips triage and conversion."""
+    if path.suffix.lower() != ".pdf":
+        warn(f"{name}: already text, skipping conversion")
+        raw = path.read_text(encoding="utf-8", errors="replace")
+        return _strip_source_frontmatter(raw), {}
+    warn(f"{name}: triaging")
+    route = triage(path)
+    n_nat, n_cplx, n_ocr = len(route["native"]), len(route["complex"]), len(route["ocr"])
+    parts = []
     if n_nat:
-        partes.append(f"{n_nat} nativas")
+        parts.append(f"{n_nat} native")
     if n_cplx:
-        partes.append(f"{n_cplx} com tabela")
+        parts.append(f"{n_cplx} with tables")
     if n_ocr:
-        partes.append(f"{n_ocr} OCR (~{n_ocr * 30}s em CPU)")
-    avisar(f"{nome}: {' + '.join(partes) or '0 paginas'}"
-           + (" [fast: sem OCR]" if fast else ""))
-    return converter(caminho, rota, device=device, avisar=avisar, fast=fast), rota
+        parts.append(f"{n_ocr} OCR (~{n_ocr * 30}s on CPU)")
+    warn(f"{name}: {' + '.join(parts) or '0 pages'}"
+         + (" [fast: no OCR]" if fast else ""))
+    return convert(path, route, device=device, warn=warn, fast=fast), route
 
 
-def _processar_um(caminho: Path, bibliotheca: Path, device: str, force: bool,
-                  avisar, resumir_com_ollama: bool = False,
-                  max_size_mb: float | None = None, fast: bool = False) -> str:
-    nome = slug(caminho.stem)
-    pasta = bibliotheca / nome
-    tamanho_mb = caminho.stat().st_size / (1024 * 1024)
-    if max_size_mb is not None and tamanho_mb > max_size_mb:
-        avisar(f"{nome}: {tamanho_mb:.1f}MB > limite de {max_size_mb}MB, pulando")
-        return "pulado"
+def _process_one(path: Path, bibliotheca: Path, device: str, force: bool,
+                 warn, summarize_with_ollama: bool = False,
+                 max_size_mb: float | None = None, fast: bool = False) -> str:
+    name = slug(path.stem)
+    folder = bibliotheca / name
+    size_mb = path.stat().st_size / (1024 * 1024)
+    if max_size_mb is not None and size_mb > max_size_mb:
+        warn(f"{name}: {size_mb:.1f}MB > limit of {max_size_mb}MB, skipping")
+        return "skipped"
 
-    digest = meta.hash_arquivo(caminho)
+    digest = meta.hash_file(path)
 
-    if not force and meta.ja_processado(pasta, digest):
-        avisar(f"{nome}: inalterado, pulando")
-        return "pulado"
+    if not force and meta.already_processed(folder, digest):
+        warn(f"{name}: unchanged, skipping")
+        return "skipped"
 
-    # colisao de slug: "Aula 1.pdf" e "aula-1.md" viram a mesma pasta. Sem isto o
-    # segundo sobrescreve o primeiro em silencio.
-    anterior = meta.ler(pasta).get("origem")
-    if anterior and anterior != str(caminho.resolve()):
-        avisar(f"{nome}: AVISO — mesmo nome que {Path(anterior).name}, sobrescrevendo")
+    prev = meta.read(folder).get("source")
+    if prev and prev != str(path.resolve()):
+        warn(f"{name}: WARNING — same name as {Path(prev).name}, overwriting")
 
     try:
-        bruto, rota = _obter_texto(caminho, device, avisar, nome, fast=fast)
-    except Exception as erro:  # PDF com senha, arquivo corrompido, encoding impossivel
-        avisar(f"{nome}: FALHOU ({erro})")
-        meta.escrever(pasta, {"origem": str(caminho.resolve()), "hash": digest,
-                              "falhou": str(erro)[:120]})
-        return "falhou"
+        raw, route = _get_text(path, device, warn, name, fast=fast)
+    except Exception as err:
+        warn(f"{name}: FAILED ({err})")
+        meta.write(folder, {"source": str(path.resolve()), "hash": digest,
+                            "failed": str(err)[:120]})
+        return "failed"
 
-    avisar(f"{nome}: fatiando")
-    fatias = fatiar(normalizar(bruto), com_paginas=bool(rota))
+    warn(f"{name}: slicing")
+    slices = slice_doc(normalize(raw), with_pages=bool(route))
 
-    for antigo in pasta.glob("[0-9]*.md"):  # reprocessamento nao deixa fatia orfa
-        antigo.unlink()
-    pasta.mkdir(parents=True, exist_ok=True)
-    for fatia in fatias:
-        (pasta / fatia.nome).write_text(_frontmatter(fatia, nome) + fatia.texto + "\n",
-                                        encoding="utf-8")
+    for old in folder.glob("[0-9]*.md"):
+        old.unlink()
+    folder.mkdir(parents=True, exist_ok=True)
+    for s in slices:
+        (folder / s.name).write_text(_frontmatter(s, name) + s.text + "\n",
+                                     encoding="utf-8")
 
-    registro = meta.novo(caminho, digest, rota)
-    registro["fatias"] = len(fatias)
+    record = meta.new_record(path, digest, route)
+    record["slices"] = len(slices)
 
-    avisar(f"{nome}: indexando")
-    chunks = embed.chunks_do_documento(pasta)
-    con = db.conectar(bibliotheca)
+    warn(f"{name}: indexing")
+    chunks = embed.doc_chunks(folder)
+    con = db.connect(bibliotheca)
     try:
-        # sem `with con:` aqui: substituir_documento ja abre a propria transacao
-        db.substituir_documento(con, nome, chunks,
-                                embed.vetorizar([c["texto"] for c in chunks]))
+        db.replace_document(con, name, chunks,
+                            embed.vectorize([c["text"] for c in chunks]))
     finally:
-        con.close()  # no Windows, conexao pendurada trava a limpeza do tmp_path
-    registro["chunks"] = len(chunks)
+        con.close()
+    record["chunks"] = len(chunks)
 
-    if resumir_com_ollama:
+    if summarize_with_ollama:
         try:
-            resumo, termos = summarize.resumir(pasta)
-            registro |= {"resumo": resumo, "termos": termos}
-        except Exception as erro:  # Ollama caiu no meio do lote: marca e segue (spec 9)
-            avisar(f"{nome}: resumo pendente ({erro})")
-    meta.escrever(pasta, registro)
-    avisar(f"{nome}: {len(fatias)} fatias")
+            s, terms = summarize.summarize(folder)
+            record |= {"summary": s, "terms": terms}
+        except Exception as err:
+            warn(f"{name}: summary pending ({err})")
+    meta.write(folder, record)
+    warn(f"{name}: {len(slices)} slices")
     return "ok"
 
 
-def adicionar(alvo: Path | str, saida: Path | str | None = None, device: str = "auto",
-              force: bool = False, avisar=print, perguntar=None,
-              resumo: str = "auto", max_size_mb: float | None = None,
-              fast: bool = False) -> dict[str, int]:
-    """Processa um arquivo (.pdf/.md/.txt) ou uma pasta.
+def ingest(target: Path | str, output: Path | str | None = None, device: str = "auto",
+           force: bool = False, warn=print, ask=None,
+           summary: str = "auto", max_size_mb: float | None = None,
+           fast: bool = False) -> dict[str, int]:
+    """Processes a file (.pdf/.md/.txt) or a folder.
 
-    `avisar` e o unico canal de progresso: a GUI passa o seu.
-    `resumo`: 'auto' (padrao) usa Ollama SE ja estiver pronto, sem baixar nada;
-    'sim' pergunta e instala se faltar; 'nao' nunca resume.
-    `max_size_mb`: pula arquivos maiores que esse limite (None = sem limite).
-    `fast`: pula Docling/OCR, usa pymupdf4llm pra tudo (paginas escaneadas saem vazias).
+    `warn` is the only progress channel: the GUI passes its own.
+    `summary`: 'auto' uses Ollama IF already ready; 'yes' asks and installs;
+    'no' never summarizes.
+    `max_size_mb`: skips files larger than this (None = no limit).
+    `fast`: skips Docling/OCR, uses pymupdf4llm for everything.
     """
-    bibliotheca = raiz(saida)
+    bibliotheca = root(output)
     bibliotheca.mkdir(parents=True, exist_ok=True)
-    resumir_com_ollama = ollama.quer_resumo(resumo, perguntar, avisar)
+    summarize_with_ollama = ollama.wants_summary(summary, ask, warn)
 
-    contagem = {"ok": 0, "pulado": 0, "falhou": 0}
-    for arquivo in _arquivos(Path(alvo)):
-        # falha de um arquivo nunca aborta o lote (spec 9)
+    count = {"ok": 0, "skipped": 0, "failed": 0}
+    for f in _files(Path(target)):
         try:
-            contagem[_processar_um(arquivo, bibliotheca, device, force, avisar,
-                                   resumir_com_ollama,
-                                   max_size_mb=max_size_mb, fast=fast)] += 1
-        except Exception as erro:
-            avisar(f"{arquivo.name}: FALHOU ({erro})")
-            contagem["falhou"] += 1
+            count[_process_one(f, bibliotheca, device, force, warn,
+                               summarize_with_ollama,
+                               max_size_mb=max_size_mb, fast=fast)] += 1
+        except Exception as err:
+            warn(f"{f.name}: FAILED ({err})")
+            count["failed"] += 1
 
-    if contagem["ok"] or contagem["pulado"]:
-        # Registra so depois, e so se sobrou documento: um lote em que tudo falhou
-        # poria uma pasta vazia no registro e o nome dela na descricao da skill.
-        registrar(bibliotheca)
-    return contagem
+    if count["ok"] or count["skipped"]:
+        register(bibliotheca)
+    return count

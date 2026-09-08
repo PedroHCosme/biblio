@@ -1,80 +1,72 @@
-"""Embeddings: modelo e dimensao decididos por medicao na Tarefa 0.3.
-
-A unidade e a janela dentro do arquivo, nao o arquivo (spec 4.6). A janela
-avanca por linha inteira para que o ponteiro linha_ini-linha_fim seja exato.
-"""
+"""Embeddings: model and dimension decided by measurement."""
 import functools
 import re
 from pathlib import Path
 
 import numpy as np
 
-MODELO = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 DIM = 384
-PREFIXO_CONSULTA = ""  # so a familia e5 precisa; descartada no spike (errou 2/4 casos cruzados)
-PREFIXO_DOC = ""
+QUERY_PREFIX = ""
+DOC_PREFIX = ""
 
-JANELA = 2000       # ~500 tokens (spec risco 5); caracteres, nao tokens: nao precisa tokenizar
-SOBREPOSICAO = 200  # evita cortar exatamente no meio da frase que responde a consulta
+WINDOW = 2000
+OVERLAP = 200
 
 _FRONTMATTER = re.compile(r"\A---\n.*?\n---\n", re.S)
 
 
 @functools.lru_cache(maxsize=1)
-def _modelo():
+def _model():
     from sentence_transformers import SentenceTransformer
-    return SentenceTransformer(MODELO)
+    return SentenceTransformer(MODEL)
 
 
-def janelas(texto: str, primeira_linha: int = 1) -> list[dict]:
-    """Fatia por linhas ate encher a janela. Devolve texto + ponteiro 1-based inclusivo."""
-    linhas = texto.split("\n")
-    saida, inicio = [], 0
-    while inicio < len(linhas):
-        fim, tamanho = inicio, 0
-        while fim < len(linhas) and (tamanho == 0 or tamanho + len(linhas[fim]) <= JANELA):
-            tamanho += len(linhas[fim]) + 1
-            fim += 1
-        bloco = "\n".join(linhas[inicio:fim]).strip()
-        if bloco:
-            saida.append({"texto": bloco,
-                          "linha_ini": primeira_linha + inicio,
-                          "linha_fim": primeira_linha + fim - 1})
-        if fim >= len(linhas):
+def windows(text: str, first_line: int = 1) -> list[dict]:
+    """Slice by lines until the window is full. Returns text + 1-based inclusive pointer."""
+    lines = text.split("\n")
+    result, start = [], 0
+    while start < len(lines):
+        end, size = start, 0
+        while end < len(lines) and (size == 0 or size + len(lines[end]) <= WINDOW):
+            size += len(lines[end]) + 1
+            end += 1
+        block = "\n".join(lines[start:end]).strip()
+        if block:
+            result.append({"text": block,
+                           "line_start": first_line + start,
+                           "line_end": first_line + end - 1})
+        if end >= len(lines):
             break
-        recuo = 0
-        while recuo < fim - inicio - 1 and sum(
-                len(l) + 1 for l in linhas[fim - recuo - 1:fim]) < SOBREPOSICAO:
-            recuo += 1
-        inicio = fim - recuo
-    return saida
+        rewind = 0
+        while rewind < end - start - 1 and sum(
+                len(l) + 1 for l in lines[end - rewind - 1:end]) < OVERLAP:
+            rewind += 1
+        start = end - rewind
+    return result
 
 
-def chunks_do_documento(pasta_doc: Path) -> list[dict]:
+def doc_chunks(doc_dir: Path) -> list[dict]:
     chunks = []
-    for arquivo in sorted(pasta_doc.glob("[0-9]*.md")):
-        conteudo = arquivo.read_text(encoding="utf-8")
-        # o frontmatter nao entra no embedding, mas conta nas linhas do ponteiro
-        corpo = _FRONTMATTER.sub("", conteudo)
-        deslocamento = conteudo[:len(conteudo) - len(corpo)].count("\n") + 1
-        secao = next((l for l in corpo.split("\n") if l.startswith("#")), arquivo.stem)
-        for janela in janelas(corpo, primeira_linha=deslocamento):
-            chunks.append(janela | {"arquivo": arquivo.name, "secao": secao.lstrip("# ")})
+    for f in sorted(doc_dir.glob("[0-9]*.md")):
+        content = f.read_text(encoding="utf-8")
+        body = _FRONTMATTER.sub("", content)
+        offset = content[:len(content) - len(body)].count("\n") + 1
+        section = next((l for l in body.split("\n") if l.startswith("#")), f.stem)
+        for win in windows(body, first_line=offset):
+            chunks.append(win | {"file": f.name, "section": section.lstrip("# ")})
     return chunks
 
 
-def vetorizar(textos: list[str]) -> np.ndarray:
-    """Vetoriza trechos do acervo. Prefixo de documento, nao de consulta."""
-    if not textos:
+def vectorize(texts: list[str]) -> np.ndarray:
+    """Vectorize corpus chunks. Document prefix, not query prefix."""
+    if not texts:
         return np.empty((0, DIM), dtype="float32")
-    return _modelo().encode([PREFIXO_DOC + t for t in textos],
-                            normalize_embeddings=True,
-                            batch_size=16).astype("float32")
+    return _model().encode([DOC_PREFIX + t for t in texts],
+                           normalize_embeddings=True,
+                           batch_size=16).astype("float32")
 
 
-def vetorizar_consulta(consulta: str) -> np.ndarray:
-    """Prefixo diferente do de documento: e assim que a familia e5 foi treinada, e
-    trocar os dois derruba a qualidade sem dar erro nenhum. Vazio nos outros modelos.
-    """
-    return _modelo().encode([PREFIXO_CONSULTA + consulta], normalize_embeddings=True,
-                            batch_size=1).astype("float32")[0]
+def vectorize_query(query: str) -> np.ndarray:
+    return _model().encode([QUERY_PREFIX + query], normalize_embeddings=True,
+                           batch_size=1).astype("float32")[0]

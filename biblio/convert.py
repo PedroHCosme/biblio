@@ -1,87 +1,78 @@
-"""Roda o conversor certo por pagina e devolve um markdown unico com marcadores.
-
-O marcador `<!-- pag N -->` sobrevive a normalizacao e e consumido (e removido)
-pelo slice, que o usa para preencher `paginas` no frontmatter.
-"""
+"""Runs the right converter per page and returns a single markdown with markers."""
 from pathlib import Path
 
 import pymupdf
 import pymupdf4llm
 
-MARCADOR = "<!-- pag {} -->"
+MARKER = "<!-- pag {} -->"
 
 
-def _converter_nativas(caminho_pdf: Path, paginas: list[int]) -> dict[int, str]:
-    if not paginas:
+def _convert_native(pdf_path: Path, pages: list[int]) -> dict[int, str]:
+    if not pages:
         return {}
-    blocos = pymupdf4llm.to_markdown(
-        str(caminho_pdf), pages=[p - 1 for p in paginas], page_chunks=True
+    blocks = pymupdf4llm.to_markdown(
+        str(pdf_path), pages=[p - 1 for p in pages], page_chunks=True
     )
-    # pymupdf4llm 0.0.17+ nomeia a chave `page_number` (1-based), nao `page`.
-    return {b["metadata"]["page_number"]: b["text"] for b in blocos}
+    return {b["metadata"]["page_number"]: b["text"] for b in blocks}
 
 
-def _converter_com_docling(caminho_pdf: Path, paginas: list[int], ocr: bool,
-                           device: str, avisar=None, rotulo: str = "") -> dict[int, str]:
-    """Docling nao aceita subconjunto de paginas, entao cada pagina vira um PDF de uma folha.
-
-    ponytail: uma folha por chamada e mais lento que um lote, mas o custo real e o OCR,
-    nao o setup. Se virar gargalo, agrupar paginas contiguas num PDF so.
-    """
-    if not paginas:
+def _convert_with_docling(pdf_path: Path, pages: list[int], ocr: bool,
+                          device: str, warn=None, label: str = "") -> dict[int, str]:
+    """Docling doesn't accept page subsets, so each page becomes a one-page PDF."""
+    if not pages:
         return {}
     from docling.datamodel.base_models import InputFormat
     from docling.datamodel.pipeline_options import PdfPipelineOptions
     from docling.document_converter import DocumentConverter, PdfFormatOption
 
-    opcoes = PdfPipelineOptions()
-    opcoes.do_ocr = ocr
-    opcoes.do_table_structure = True
+    options = PdfPipelineOptions()
+    options.do_ocr = ocr
+    options.do_table_structure = True
     if device != "auto":
-        opcoes.accelerator_options.device = device
+        options.accelerator_options.device = device
 
-    conversor = DocumentConverter(
-        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=opcoes)}
+    converter = DocumentConverter(
+        format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options)}
     )
 
-    saida: dict[int, str] = {}
-    total = len(paginas)
-    with pymupdf.open(caminho_pdf) as origem:
-        for i, numero in enumerate(paginas, 1):
-            if avisar:
-                avisar(f"  {rotulo} pag {numero} ({i}/{total})")
-            recorte = pymupdf.open()
-            recorte.insert_pdf(origem, from_page=numero - 1, to_page=numero - 1)
-            temporario = caminho_pdf.parent / f".{caminho_pdf.stem}-p{numero}.pdf"
-            recorte.save(temporario)
-            recorte.close()
+    output: dict[int, str] = {}
+    total = len(pages)
+    with pymupdf.open(pdf_path) as source:
+        for i, number in enumerate(pages, 1):
+            if warn:
+                warn(f"  {label} page {number} ({i}/{total})")
+            excerpt = pymupdf.open()
+            excerpt.insert_pdf(source, from_page=number - 1, to_page=number - 1)
+            tmp = pdf_path.parent / f".{pdf_path.stem}-p{number}.pdf"
+            excerpt.save(tmp)
+            excerpt.close()
             try:
-                saida[numero] = conversor.convert(temporario).document.export_to_markdown()
+                output[number] = converter.convert(tmp).document.export_to_markdown()
             finally:
-                temporario.unlink(missing_ok=True)
-    return saida
+                tmp.unlink(missing_ok=True)
+    return output
 
 
-def converter(caminho_pdf: Path, rota: dict[str, list[int]], device: str = "auto",
-              avisar=None, fast: bool = False) -> str:
-    """Markdown do documento inteiro, paginas em ordem, cada uma precedida do marcador.
+def convert(pdf_path: Path, route: dict[str, list[int]], device: str = "auto",
+            warn=None, fast: bool = False) -> str:
+    """Markdown of the entire document, pages in order, each preceded by a marker.
 
-    fast=True: pula Docling, usa pymupdf4llm pra tudo. Rapido, mas paginas
-    escaneadas (OCR) saem vazias ou com lixo.
+    fast=True: skips Docling, uses pymupdf4llm for everything. Fast, but scanned
+    pages (OCR) come out empty or garbled.
     """
     if fast:
-        todas = sorted(rota["nativa"] + rota["complexa"] + rota["ocr"])
-        paginas = _converter_nativas(caminho_pdf, todas)
+        all_pages = sorted(route["native"] + route["complex"] + route["ocr"])
+        pages = _convert_native(pdf_path, all_pages)
     else:
-        paginas = {}
-        paginas |= _converter_nativas(caminho_pdf, rota["nativa"])
-        paginas |= _converter_com_docling(caminho_pdf, rota["complexa"], ocr=False, device=device,
-                                          avisar=avisar, rotulo="docling")
-        paginas |= _converter_com_docling(caminho_pdf, rota["ocr"], ocr=True, device=device,
-                                          avisar=avisar, rotulo="ocr")
+        pages = {}
+        pages |= _convert_native(pdf_path, route["native"])
+        pages |= _convert_with_docling(pdf_path, route["complex"], ocr=False, device=device,
+                                       warn=warn, label="docling")
+        pages |= _convert_with_docling(pdf_path, route["ocr"], ocr=True, device=device,
+                                       warn=warn, label="ocr")
 
-    partes = []
-    for numero in sorted(paginas):
-        partes.append(MARCADOR.format(numero))
-        partes.append(paginas[numero].strip())
-    return "\n\n".join(partes) + "\n"
+    parts = []
+    for number in sorted(pages):
+        parts.append(MARKER.format(number))
+        parts.append(pages[number].strip())
+    return "\n\n".join(parts) + "\n"

@@ -1,126 +1,108 @@
-"""Busca hibrida. Devolve caminho, linhas, score e heading. Nunca o corpo (spec 6)."""
+"""Hybrid search. Returns path, lines, score, and heading. Never the body."""
 import re
 import unicodedata
 from pathlib import Path
 
 from biblio import db, embed
-from biblio.paths import conhecidas_bibliotheca, registrar, todas
+from biblio.paths import known_bibliothecas, register, all_libs
 
-K_RRF = 60      # constante classica do Reciprocal Rank Fusion
-MULTIPLO = 4    # cada lista traz top*4 antes da fusao, para a fusao ter o que fundir
-BONUS_HEADING = 0.03  # medido: r@1 56%->80% num eval de 25 consultas no acervo real
+K_RRF = 60
+MULTIPLE = 4
+BONUS_HEADING = 0.03
 
-# palavras de pergunta que nao discriminam nada — nao contam no casamento com o heading
-_VAZIAS = set("o a e de do da os as em para por com como ou no na um uma dos das que "
-              "qual quais entre sobre the of a an is are what how why".split())
-
-
-def _tokens(texto: str) -> set[str]:
-    sem_acento = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode()
-    return {t for t in re.findall(r"[a-z0-9]{3,}", sem_acento.lower()) if t not in _VAZIAS}
+_STOPWORDS = set("o a e de do da os as em para por com como ou no na um uma dos das que "
+                 "qual quais entre sobre the of a an is are what how why".split())
 
 
-def rrf(listas: list[list]) -> dict:
-    """1/(K + posicao) por lista, somado. Dispensa normalizar cosseno contra BM25.
-
-    A chave e opaca: com varias bibliothecas ela e (bibliotheca, id), porque id de
-    chunk so e unico dentro de um banco.
-    """
-    pontos: dict = {}
-    for lista in listas:
-        for posicao, chave in enumerate(lista, start=1):
-            pontos[chave] = pontos.get(chave, 0.0) + 1 / (K_RRF + posicao)
-    return pontos
+def _tokens(text: str) -> set[str]:
+    no_accent = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    return {t for t in re.findall(r"[a-z0-9]{3,}", no_accent.lower()) if t not in _STOPWORDS}
 
 
-def _intervalo(caminho: str, linha: dict, contexto: str) -> tuple[int, int]:
-    """`janela`: so o trecho que casou com a consulta (ponteiro minimo).
-    `secao` (padrao): a fatia inteira — o arquivo e delimitado por heading e tem
-    teto de 8000 chars, entao ainda e barato, e a resposta de uma pergunta
-    costuma passar da janela que casou (a janela e boa para *rankear*, curta
-    demais para *responder*).
-    """
-    if contexto == "janela":
-        return linha["linha_ini"], linha["linha_fim"]
+def rrf(lists: list[list]) -> dict:
+    """1/(K + position) per list, summed."""
+    scores: dict = {}
+    for lst in lists:
+        for position, key in enumerate(lst, start=1):
+            scores[key] = scores.get(key, 0.0) + 1 / (K_RRF + position)
+    return scores
+
+
+def _interval(filepath: str, row: dict, context: str) -> tuple[int, int]:
+    """`window`: just the matched chunk. `section` (default): the entire slice."""
+    if context == "window":
+        return row["line_start"], row["line_end"]
     try:
-        n = len(Path(caminho).read_text(encoding="utf-8", errors="replace").splitlines())
+        n = len(Path(filepath).read_text(encoding="utf-8", errors="replace").splitlines())
     except OSError:
-        return linha["linha_ini"], linha["linha_fim"]
+        return row["line_start"], row["line_end"]
     return 1, n
 
 
-def buscar(consulta: str, saida=None, top: int = 5, doc: str | None = None,
-           contexto: str = "secao") -> list[dict]:
-    """Cobre todas as bibliothecas registradas, salvo `saida` (caminho ou lista)."""
-    candidatos = top * MULTIPLO
-    vetor = embed.vetorizar_consulta(consulta)
+def search(query: str, output=None, top: int = 5, doc: str | None = None,
+           context: str = "section") -> list[dict]:
+    """Covers all registered bibliothecas, unless `output` (path or list) restricts."""
+    candidates = top * MULTIPLE
+    vector = embed.vectorize_query(query)
 
-    listas: list[list] = []
-    linhas: dict = {}
-    for bibliotheca in todas(saida):
-        if not (bibliotheca / db.ARQUIVO).exists():  # nao cria banco em pasta alheia
-            if saida is None:
+    lists: list[list] = []
+    rows: dict = {}
+    for bibliotheca in all_libs(output):
+        if not (bibliotheca / db.DB_FILE).exists():
+            if output is None:
                 continue
-            # Pasta pedida de proposito. Silencio aqui vira "zero resultados" sem
-            # causa, e o agente conclui que o acervo nao sabe a resposta.
             raise SystemExit(
-                f'{bibliotheca}: nao e uma bibliotheca biblio (falta {db.ARQUIVO}).\n'
-                f'Passe o caminho da pasta, ou um nome de `biblio libs`.')
-        if saida is not None and str(bibliotheca.resolve()) not in conhecidas_bibliotheca():
-            # Usar uma pasta uma vez ja a torna conhecida desta maquina: uma copia
-            # vinda de outro computador entra na busca global sem comando nenhum.
-            registrar(bibliotheca)
-        con = db.conectar(bibliotheca)
+                f'{bibliotheca}: not a biblio bibliotheca (missing {db.DB_FILE}).\n'
+                f'Pass the folder path, or a name from `biblio libs`.')
+        if output is not None and str(bibliotheca.resolve()) not in known_bibliothecas():
+            register(bibliotheca)
+        con = db.connect(bibliotheca)
         try:
-            ranques = [db.buscar_vetorial(con, vetor, candidatos, doc),
-                       db.buscar_fts(con, consulta, candidatos, doc)]
-            for identificador, linha in db.detalhes(
-                    con, list({i for r in ranques for i in r})).items():
-                linhas[(bibliotheca, identificador)] = linha
-            listas += [[(bibliotheca, i) for i in r] for r in ranques]
+            rankings = [db.search_vector(con, vector, candidates, doc),
+                        db.search_fts(con, query, candidates, doc)]
+            for chunk_id, row in db.details(
+                    con, list({i for r in rankings for i in r})).items():
+                rows[(bibliotheca, chunk_id)] = row
+            lists += [[(bibliotheca, i) for i in r] for r in rankings]
         finally:
             con.close()
 
-    # Bonus de heading: uma fatia cujo titulo casa com a pergunta sobe. Sem isto, a
-    # aula que cobre 40 topicos ganha da nota atomica que responde exatamente um.
-    q_tokens = _tokens(consulta)
-    pontuados = rrf(listas)
+    q_tokens = _tokens(query)
+    scored = rrf(lists)
     if q_tokens:
-        for chave, linha in linhas.items():
-            casa = q_tokens & _tokens(linha["secao"] or "")
-            if casa:
-                pontuados[chave] = pontuados.get(chave, 0.0) + \
-                    BONUS_HEADING * len(casa) / len(q_tokens)
+        for key, row in rows.items():
+            match = q_tokens & _tokens(row["section"] or "")
+            if match:
+                scored[key] = scored.get(key, 0.0) + \
+                    BONUS_HEADING * len(match) / len(q_tokens)
 
-    achados: list[dict] = []
-    vistos: set[str] = set()
-    for (bibliotheca, identificador), ponto in sorted(pontuados.items(),
-                                                     key=lambda p: -p[1]):
-        linha = linhas.get((bibliotheca, identificador))
-        if linha is None:
+    results: list[dict] = []
+    seen: set[str] = set()
+    for (bibliotheca, chunk_id), score in sorted(scored.items(),
+                                                 key=lambda p: -p[1]):
+        row = rows.get((bibliotheca, chunk_id))
+        if row is None:
             continue
-        # caminho absoluto: com varias bibliothecas, caminho relativo obrigaria o
-        # agente a adivinhar a raiz certa (spec 6)
-        caminho = str((bibliotheca / linha["doc"] / linha["arquivo"]).resolve())
-        if caminho in vistos:  # spec 6.1: deduplicado por arquivo, fica o melhor
+        filepath = str((bibliotheca / row["doc"] / row["file"]).resolve())
+        if filepath in seen:
             continue
-        vistos.add(caminho)
-        ini, fim = _intervalo(caminho, linha, contexto)
-        achados.append({
-            "caminho": caminho, "doc": linha["doc"], "arquivo": linha["arquivo"],
-            "secao": linha["secao"], "linha_ini": ini,
-            "linha_fim": fim, "score": round(ponto, 4),
+        seen.add(filepath)
+        start, end = _interval(filepath, row, context)
+        results.append({
+            "path": filepath, "doc": row["doc"], "file": row["file"],
+            "section": row["section"], "line_start": start,
+            "line_end": end, "score": round(score, 4),
         })
-        if len(achados) == top:
+        if len(results) == top:
             break
-    return achados
+    return results
 
 
-def formatar(achados: list[dict]) -> str:
-    if not achados:
-        return "nada encontrado"
+def format_results(results: list[dict]) -> str:
+    if not results:
+        return "no results"
     return "\n".join(
-        f"{a['caminho']}:{a['linha_ini']}-{a['linha_fim']}"
-        f"  {a['score']:.3f}  {a['secao']}"
-        for a in achados
+        f"{r['path']}:{r['line_start']}-{r['line_end']}"
+        f"  {r['score']:.3f}  {r['section']}"
+        for r in results
     )

@@ -1,86 +1,79 @@
-"""Gera INDEX.md e CLAUDE.md a partir da bibliotheca em disco. Nunca reprocessa original."""
+"""Generates INDEX.md and CLAUDE.md from the bibliotheca on disk. Never reprocesses originals."""
 from pathlib import Path
 
 from biblio import meta, ollama, skill, summarize
-from biblio.paths import raiz, registrar
+from biblio.paths import root, register
 
-CABECALHO = """# Bibliotheca
+HEADER = """# Bibliotheca
 
-Indice para `grep`, nao para leitura. Um bloco por documento; a linha **Termos** e
-o caminho de recuperacao quando a busca semantica falha.
+Index for `grep`, not for reading. One block per document; the **Terms** line is
+the fallback when semantic search misses.
 
-Use `biblio search "<consulta>"` primeiro. Nunca leia este arquivo inteiro.
+Use `biblio search "<query>"` first. Never read this entire file.
 
-Nao consegue executar `biblio search`? Entao este indice e a porta de entrada:
-ache o bloco do documento pela linha **Termos** e leia so as secoes que o bloco
-nomeia. Medido na Tarefa 0.0: um agente sem instrucao previa da `cat` na pasta
-inteira, e e a unica coisa aqui que nao tem conserto depois.
+Can't run `biblio search`? Then this index is the entry point: find the document
+block by its **Terms** line and read only the sections the block names.
 
 """
 
 
-def _procedencia(dados: dict) -> str:
-    """Origem que ja era texto nao tem pagina nem OCR: nao invente nenhum dos dois."""
-    if not (paginas := dados.get("paginas")):
-        return dados.get("formato", "texto")
-    rota = dados.get("rota", {})
-    natureza = f"{rota['ocr']} pag. de OCR" if rota.get("ocr") else "texto nativo"
-    return f"{paginas} pag, {natureza}"
+def _provenance(data: dict) -> str:
+    """Source that was already text has no pages or OCR: don't invent either."""
+    if not (pages := data.get("pages")):
+        return data.get("format", "text")
+    route = data.get("route", {})
+    nature = f"{route['ocr']} OCR pages" if route.get("ocr") else "native text"
+    return f"{pages} pages, {nature}"
 
 
-def _bloco(pasta: Path, dados: dict) -> str:
-    resumo = dados.get("resumo")
-    if not resumo or resumo == "pendente":  # "pendente" e o placeholder de meta.novo
-        resumo = "sem resumo"
-    linhas = [
-        f"## {pasta.name}",
-        f"{resumo} {_procedencia(dados)}.",
+def _block(folder: Path, data: dict) -> str:
+    summary = data.get("summary")
+    if not summary or summary == "pending":
+        summary = "no summary"
+    lines = [
+        f"## {folder.name}",
+        f"{summary} {_provenance(data)}.",
     ]
-    if dados.get("falhou"):
-        linhas.append(f"**FALHOU:** {dados['falhou']}")
-    if dados.get("qualidade") == "baixa":
-        linhas.append("**AVISO:** OCR de baixa qualidade, confira contra o original.")
-    if termos := dados.get("termos"):
-        linhas.append(f"**Termos:** {', '.join(termos)}")
-    secoes = sorted(p.stem for p in pasta.glob("[0-9]*.md"))
-    if secoes:
-        # ponytail: uma aula com 40 fatias despejava 40 slugs (20% do INDEX.md).
-        # 8 dao a ideia; quem quer a lista exata roda `biblio search --doc <nome>`.
-        mostra = secoes[:8] + ([f"… (+{len(secoes) - 8})"] if len(secoes) > 8 else [])
-        linhas.append(f"**Secoes:** {' · '.join(mostra)}")
-    linhas.append(f"`{pasta.name}/`")
-    return "\n".join(linhas) + "\n"
+    if data.get("failed"):
+        lines.append(f"**FAILED:** {data['failed']}")
+    if data.get("quality") == "low":
+        lines.append("**WARNING:** low-quality OCR, check against the original.")
+    if terms := data.get("terms"):
+        lines.append(f"**Terms:** {', '.join(terms)}")
+    sections = sorted(p.stem for p in folder.glob("[0-9]*.md"))
+    if sections:
+        show = sections[:8] + ([f"... (+{len(sections) - 8})"] if len(sections) > 8 else [])
+        lines.append(f"**Sections:** {' · '.join(show)}")
+    lines.append(f"`{folder.name}/`")
+    return "\n".join(lines) + "\n"
 
 
-def gerar(saida=None, resumo: str = "auto", perguntar=None, avisar=print) -> Path:
-    """`resumo`: 'auto' (padrao) preenche resumo pendente SE o Ollama ja estiver
-    pronto; 'sim' pergunta e instala se faltar; 'nao' so regera INDEX/CLAUDE.
+def generate(output=None, summary: str = "auto", ask=None, warn=print) -> Path:
+    """`summary`: 'auto' (default) fills pending summaries IF Ollama is ready;
+    'yes' asks and installs if missing; 'no' only regenerates INDEX/CLAUDE.
     """
-    bibliotheca = raiz(saida)
-    bibliotheca.mkdir(parents=True, exist_ok=True)  # `biblio index` antes do primeiro add
-    resumir_pendentes = ollama.quer_resumo(resumo, perguntar, avisar)
-    blocos = []
-    for pasta in sorted(p for p in bibliotheca.iterdir() if p.is_dir()):
-        dados = meta.ler(pasta)
-        if not dados:
+    bibliotheca = root(output)
+    bibliotheca.mkdir(parents=True, exist_ok=True)
+    summarize_pending = ollama.wants_summary(summary, ask, warn)
+    blocks = []
+    for folder in sorted(p for p in bibliotheca.iterdir() if p.is_dir()):
+        data = meta.read(folder)
+        if not data:
             continue
-        if resumir_pendentes and dados.get("resumo") == "pendente":
+        if summarize_pending and data.get("summary") == "pending":
             try:
-                resumo, termos = summarize.resumir(pasta)
-                dados |= {"resumo": resumo, "termos": termos}
-                meta.escrever(pasta, dados)
-                avisar(f"{pasta.name}: resumo gerado")
-            except Exception as erro:
-                avisar(f"{pasta.name}: resumo segue pendente ({erro})")
-        blocos.append(_bloco(pasta, dados))
+                s, terms = summarize.summarize(folder)
+                data |= {"summary": s, "terms": terms}
+                meta.write(folder, data)
+                warn(f"{folder.name}: summary generated")
+            except Exception as err:
+                warn(f"{folder.name}: summary still pending ({err})")
+        blocks.append(_block(folder, data))
 
-    if blocos:
-        # Pasta com documentos e bibliotheca desta maquina, mesmo que tenha vindo de
-        # outra: `biblio --out <pasta> index` e como uma copia entra na busca global.
-        # Pasta vazia nao entra: sujaria a descricao da skill com um nome sem acervo.
-        registrar(bibliotheca)
+    if blocks:
+        register(bibliotheca)
 
-    (bibliotheca / "CLAUDE.md").write_text(skill.texto_claude_md(), encoding="utf-8")
-    destino = bibliotheca / "INDEX.md"
-    destino.write_text(CABECALHO + "\n".join(blocos), encoding="utf-8")
-    return destino
+    (bibliotheca / "CLAUDE.md").write_text(skill.claude_md_text(), encoding="utf-8")
+    dest = bibliotheca / "INDEX.md"
+    dest.write_text(HEADER + "\n".join(blocks), encoding="utf-8")
+    return dest

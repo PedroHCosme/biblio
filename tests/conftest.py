@@ -1,46 +1,46 @@
 import pymupdf
 import pytest
 
-TEXTO_DENSO = ("Lorem ipsum dolor sit amet, consectetur adipiscing elit. " * 8)
+DENSE_TEXT = ("Lorem ipsum dolor sit amet, consectetur adipiscing elit. " * 8)
 
 
-def _pdf(destino, paginas):
-    """paginas: lista de strings; string vazia = pagina sem texto (finge escaneada)."""
+def _pdf(dest, pages):
+    """pages: list of strings; empty string = page without text (simulates scanned)."""
     doc = pymupdf.open()
-    for conteudo in paginas:
-        pagina = doc.new_page()
-        if conteudo:
-            pagina.insert_textbox(pymupdf.Rect(50, 50, 550, 750), conteudo, fontsize=11)
-    doc.save(destino)
+    for content in pages:
+        page = doc.new_page()
+        if content:
+            page.insert_textbox(pymupdf.Rect(50, 50, 550, 750), content, fontsize=11)
+    doc.save(dest)
     doc.close()
-    return destino
+    return dest
 
 
 @pytest.fixture
-def pdf_nativo(tmp_path):
-    return _pdf(tmp_path / "nativo.pdf", [TEXTO_DENSO, TEXTO_DENSO])
+def native_pdf(tmp_path):
+    return _pdf(tmp_path / "native.pdf", [DENSE_TEXT, DENSE_TEXT])
 
 
 @pytest.fixture
-def pdf_escaneado(tmp_path):
-    return _pdf(tmp_path / "escaneado.pdf", ["", ""])
+def scanned_pdf(tmp_path):
+    return _pdf(tmp_path / "scanned.pdf", ["", ""])
 
 
 @pytest.fixture
-def pdf_misto(tmp_path):
-    return _pdf(tmp_path / "misto.pdf", [TEXTO_DENSO, "", TEXTO_DENSO])
+def mixed_pdf(tmp_path):
+    return _pdf(tmp_path / "mixed.pdf", [DENSE_TEXT, "", DENSE_TEXT])
 
 
 @pytest.fixture(autouse=True)
-def registro_isolado(tmp_path, monkeypatch):
-    """Teste nunca escreve no registro real do usuario."""
-    monkeypatch.setattr("biblio.paths.REGISTRO", tmp_path / "bibliothecas.txt")
+def isolated_registry(tmp_path, monkeypatch):
+    """Test never writes to the user's real registry."""
+    monkeypatch.setattr("biblio.paths.REGISTRY", tmp_path / "bibliothecas.txt")
 
 
 @pytest.fixture(autouse=True)
-def sem_ollama(monkeypatch):
-    """Nao chama o modelo local nos testes, mesmo se a maquina tiver Ollama no ar."""
-    monkeypatch.setattr("biblio.ollama.disponivel", lambda: False)
+def without_ollama(monkeypatch):
+    """Don't call the local model in tests, even if the machine has Ollama running."""
+    monkeypatch.setattr("biblio.ollama.available", lambda: False)
 
 
 CORPUS = {
@@ -70,32 +70,32 @@ CORPUS = {
 }
 
 
-def _montar(raiz, nomes):
-    """Indexa de verdade — nada de banco falso; o teste 4 valida o modelo escolhido."""
+def _build(root, names):
+    """Indexes for real — no fake DB; test 4 validates the chosen model."""
     from biblio import db, embed
 
-    con = db.conectar(raiz)
-    for doc in nomes:
-        pasta = raiz / doc
-        pasta.mkdir()
-        for nome, corpo in CORPUS[doc]:
-            (pasta / nome).write_text(
-                f"---\ndoc: {doc}\nsecao: x\n---\n\n{corpo}\n", encoding="utf-8")
-        chunks = embed.chunks_do_documento(pasta)
-        db.substituir_documento(con, doc, chunks,
-                                embed.vetorizar([c["texto"] for c in chunks]))
+    con = db.connect(root)
+    for doc in names:
+        folder = root / doc
+        folder.mkdir()
+        for fname, body in CORPUS[doc]:
+            (folder / fname).write_text(
+                f"---\ndoc: {doc}\nsection: x\n---\n\n{body}\n", encoding="utf-8")
+        chunks = embed.doc_chunks(folder)
+        db.replace_document(con, doc, chunks,
+                            embed.vectorize([c["text"] for c in chunks]))
     con.close()
-    return raiz
+    return root
 
 
 @pytest.fixture(scope="session")
-def bibliotheca_sintetica(tmp_path_factory):
-    """Sessao inteira: o modelo de embedding carrega uma vez so."""
-    return _montar(tmp_path_factory.mktemp("lib"),
-                   ["nbr-6118-concreto", "nbr-7480-aco", "manual-inversor"])
+def synthetic_bibliotheca(tmp_path_factory):
+    """Entire session: the embedding model loads once."""
+    return _build(tmp_path_factory.mktemp("lib"),
+                  ["nbr-6118-concreto", "nbr-7480-aco", "manual-inversor"])
 
 
 @pytest.fixture(scope="session")
-def bibliotheca_secundaria(tmp_path_factory):
-    """A segunda bibliotheca que o usuario cria noutra rodada (spec 6.0)."""
-    return _montar(tmp_path_factory.mktemp("lib2"), ["artigo-fadiga"])
+def secondary_bibliotheca(tmp_path_factory):
+    """The second bibliotheca the user creates in another run."""
+    return _build(tmp_path_factory.mktemp("lib2"), ["artigo-fadiga"])

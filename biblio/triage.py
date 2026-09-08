@@ -1,33 +1,24 @@
-"""Decide, pagina a pagina, qual conversor usar. Deterministico, sem modelo."""
+"""Decide which converter to use, page by page. Deterministic, no model."""
 from pathlib import Path
 
 import pymupdf
 
-# spec 4.1: abaixo disso a pagina e tratada como imagem (OCR).
-# Medido no acervo ELE085: 108 das 182 paginas roteadas para OCR com o corte em 200
-# tinham 120-199 caracteres nativos — e esse texto ERA o conteudo do slide (bullets
-# e equacoes). OCR delas relia os mesmos bullets a ~8s/pagina. Baixado para 120:
-# ingestao de uma aula OCR-pesada caiu 144s->82s, com MAIS texto indexado.
-# Slide com 120-199 ch nativos passa direto; scan de verdade (pagina quase vazia,
-# < 120) ainda vai para OCR.
-LIMIAR_CARACTERES = 120
+CHAR_THRESHOLD = 120
 
 
-def rotear_pagina(n_caracteres: int, tem_tabela: bool) -> str:
-    """nativa (pymupdf4llm, rapido) | complexa (docling) | ocr (docling com OCR)."""
-    if n_caracteres < LIMIAR_CARACTERES:
+def route_page(n_chars: int, has_table: bool) -> str:
+    """native (pymupdf4llm, fast) | complex (docling) | ocr (docling with OCR)."""
+    if n_chars < CHAR_THRESHOLD:
         return "ocr"
-    return "complexa" if tem_tabela else "nativa"
+    return "complex" if has_table else "native"
 
 
-def triar(caminho_pdf: Path) -> dict[str, list[int]]:
-    """Devolve {'nativa': [...], 'complexa': [...], 'ocr': [...]} com paginas 1-based."""
-    rota: dict[str, list[int]] = {"nativa": [], "complexa": [], "ocr": []}
-    with pymupdf.open(caminho_pdf) as doc:
-        for numero, pagina in enumerate(doc, start=1):
-            n = len(pagina.get_text().strip())
-            # ponytail: find_tables() so roda quando a pagina ja passou no limiar;
-            # e a chamada cara da triagem e nao muda o resultado das paginas de OCR.
-            tem_tabela = n >= LIMIAR_CARACTERES and bool(pagina.find_tables().tables)
-            rota[rotear_pagina(n, tem_tabela)].append(numero)
-    return rota
+def triage(pdf_path: Path) -> dict[str, list[int]]:
+    """Returns {'native': [...], 'complex': [...], 'ocr': [...]} with 1-based pages."""
+    route: dict[str, list[int]] = {"native": [], "complex": [], "ocr": []}
+    with pymupdf.open(pdf_path) as doc:
+        for number, page in enumerate(doc, start=1):
+            n = len(page.get_text().strip())
+            has_table = n >= CHAR_THRESHOLD and bool(page.find_tables().tables)
+            route[route_page(n, has_table)].append(number)
+    return route

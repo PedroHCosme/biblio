@@ -1,71 +1,68 @@
-from biblio.search import buscar, formatar, rrf
+from biblio.search import search, format_results, rrf
 
 
-def test_rrf_soma_as_duas_listas():
-    pontos = rrf([[10, 20, 30], [30, 40]])
-    assert pontos[30] > pontos[10], "id nas duas listas tem que ganhar do primeiro de uma so"
-    assert pontos[10] > pontos[20]
+def test_rrf_sums_both_lists():
+    scores = rrf([[10, 20, 30], [30, 40]])
+    assert scores[30] > scores[10], "id in both lists must beat the top of one"
+    assert scores[10] > scores[20]
 
 
-def test_rrf_lista_vazia_nao_quebra():
+def test_rrf_empty_list_does_not_break():
     assert rrf([[], [7]]) == {7: 1 / 61}
 
 
-def test_consulta_em_portugues_acha_o_arquivo_certo_no_top3(bibliotheca_sintetica):
-    achados = buscar("como calcular o comprimento de ancoragem", saida=bibliotheca_sintetica, top=3)
-    assert any(a["arquivo"] == "09-ancoragem.md" for a in achados), achados
+def test_portuguese_query_finds_right_file_in_top3(synthetic_bibliotheca):
+    results = search("como calcular o comprimento de ancoragem", output=synthetic_bibliotheca, top=3)
+    assert any(r["file"] == "09-ancoragem.md" for r in results), results
 
 
-def test_identificador_exato_e_achado_pelo_fts(bibliotheca_sintetica):
-    # top-3, nao top-1: a posicao exata depende do ranking do modelo, e o requisito
-    # e "o FTS resgata o termo literal", nao "o RRF poe em primeiro"
-    achados = buscar("inversor de frequencia", saida=bibliotheca_sintetica, top=3)
-    assert any(a["doc"] == "manual-inversor" for a in achados), achados
+def test_exact_identifier_found_by_fts(synthetic_bibliotheca):
+    results = search("inversor de frequencia", output=synthetic_bibliotheca, top=3)
+    assert any(r["doc"] == "manual-inversor" for r in results), results
 
 
-def test_filtro_por_documento_restringe(bibliotheca_sintetica):
-    achados = buscar("aderencia", saida=bibliotheca_sintetica, top=5, doc="nbr-7480-aco")
-    assert achados and all(a["doc"] == "nbr-7480-aco" for a in achados)
+def test_doc_filter_restricts(synthetic_bibliotheca):
+    results = search("aderencia", output=synthetic_bibliotheca, top=5, doc="nbr-7480-aco")
+    assert results and all(r["doc"] == "nbr-7480-aco" for r in results)
 
 
-def test_um_resultado_por_arquivo(bibliotheca_sintetica):
-    achados = buscar("ancoragem aderencia concreto", saida=bibliotheca_sintetica, top=5)
-    caminhos = [a["caminho"] for a in achados]
-    assert len(caminhos) == len(set(caminhos))
+def test_one_result_per_file(synthetic_bibliotheca):
+    results = search("ancoragem aderencia concreto", output=synthetic_bibliotheca, top=5)
+    paths = [r["path"] for r in results]
+    assert len(paths) == len(set(paths))
 
 
-def test_saida_traz_ponteiro_e_nunca_o_corpo(bibliotheca_sintetica):
-    achados = buscar("comprimento de ancoragem", saida=bibliotheca_sintetica, top=3)
-    texto = formatar(achados)
-    assert ".md:" in texto
-    assert "resistencia de aderencia de calculo" not in texto, "vazou conteudo na saida"
-    assert max(len(l) for l in texto.splitlines()) < 200, "linha longa demais"
+def test_output_has_pointer_never_body(synthetic_bibliotheca):
+    results = search("comprimento de ancoragem", output=synthetic_bibliotheca, top=3)
+    text = format_results(results)
+    assert ".md:" in text
+    assert "resistencia de aderencia de calculo" not in text, "body leaked into output"
+    assert max(len(l) for l in text.splitlines()) < 200, "line too long"
 
 
-def test_caminho_devolvido_e_absoluto_e_existe(bibliotheca_sintetica):
+def test_returned_path_is_absolute_and_exists(synthetic_bibliotheca):
     from pathlib import Path
-    achado = buscar("comprimento de ancoragem", saida=bibliotheca_sintetica, top=1)[0]
-    caminho = Path(achado["caminho"])
-    assert caminho.is_absolute() and caminho.exists()
+    result = search("comprimento de ancoragem", output=synthetic_bibliotheca, top=1)[0]
+    p = Path(result["path"])
+    assert p.is_absolute() and p.exists()
 
 
-def test_context_secao_devolve_a_fatia_inteira(bibliotheca_sintetica):
+def test_context_section_returns_entire_slice(synthetic_bibliotheca):
     from pathlib import Path
     q = "comprimento de ancoragem"
-    janela = buscar(q, saida=bibliotheca_sintetica, top=1, contexto="janela")[0]
-    secao = buscar(q, saida=bibliotheca_sintetica, top=1, contexto="secao")[0]
-    n = len(Path(secao["caminho"]).read_text(encoding="utf-8").splitlines())
-    assert (secao["linha_ini"], secao["linha_fim"]) == (1, n)
-    assert secao["linha_fim"] - secao["linha_ini"] >= janela["linha_fim"] - janela["linha_ini"]
+    win = search(q, output=synthetic_bibliotheca, top=1, context="window")[0]
+    sec = search(q, output=synthetic_bibliotheca, top=1, context="section")[0]
+    n = len(Path(sec["path"]).read_text(encoding="utf-8").splitlines())
+    assert (sec["line_start"], sec["line_end"]) == (1, n)
+    assert sec["line_end"] - sec["line_start"] >= win["line_end"] - win["line_start"]
 
 
-def test_busca_cobre_duas_bibliothecas(bibliotheca_sintetica, bibliotheca_secundaria):
-    """Spec 6.0: a segunda bibliotheca nao pode falhar em silencio."""
-    consulta = "fatigue of welded joints under cyclic loading"
-    achados = buscar(consulta, saida=[bibliotheca_sintetica, bibliotheca_secundaria], top=3)
-    assert any(a["doc"] == "artigo-fadiga" for a in achados), achados
+def test_search_covers_two_bibliothecas(synthetic_bibliotheca, secondary_bibliotheca):
+    query = "fatigue of welded joints under cyclic loading"
+    results = search(query, output=[synthetic_bibliotheca, secondary_bibliotheca], top=3)
+    assert any(r["doc"] == "artigo-fadiga" for r in results), results
 
 
-def test_lib_restringe_a_uma_bibliotheca(bibliotheca_sintetica, bibliotheca_secundaria):
-    achados = buscar("fatigue welded joints", saida=bibliotheca_sintetica, top=3)
-    assert all(a["doc"] != "artigo-fadiga" for a in achados)
+def test_lib_restricts_to_one_bibliotheca(synthetic_bibliotheca, secondary_bibliotheca):
+    results = search("fatigue welded joints", output=synthetic_bibliotheca, top=3)
+    assert all(r["doc"] != "artigo-fadiga" for r in results)

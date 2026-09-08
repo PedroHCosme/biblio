@@ -1,7 +1,7 @@
 [project]
 name = "biblio"
-version = "0.1.0"
-description = "Camada de memória documental para agentes"
+version = "0.2.0"
+description = "Document memory layer for agents"
 requires-python = ">=3.11"
 dependencies = [
     "pymupdf>=1.24",

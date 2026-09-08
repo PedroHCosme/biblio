@@ -1,143 +1,143 @@
-"""argparse e nada mais. Toda a logica mora nos modulos; aqui so tem parsing."""
+"""argparse and nothing else. All logic lives in the modules; only parsing here."""
 import argparse
 import json
 import sys
 from pathlib import Path
 
 from biblio import index, meta, pipeline, search, skill
-from biblio.paths import conhecidas_bibliotheca, raiz
+from biblio.paths import known_bibliothecas, root
 
 
-def _perguntar(texto: str) -> bool:
-    return input(f"{texto} [s/N] ").strip().lower() in ("s", "sim", "y", "yes")
+def _confirm(text: str) -> bool:
+    return input(f"{text} [y/N] ").strip().lower() in ("y", "yes", "s", "sim")
 
 
 def _status(args) -> int:
-    bibliotheca = raiz(args.out)
+    bibliotheca = root(args.out)
     if not bibliotheca.exists():
-        print(f"bibliotheca vazia: {bibliotheca}")
+        print(f"empty bibliotheca: {bibliotheca}")
         return 0
-    for pasta in sorted(p for p in bibliotheca.iterdir() if p.is_dir()):
-        dados = meta.ler(pasta)
-        if not dados:
+    for folder in sorted(p for p in bibliotheca.iterdir() if p.is_dir()):
+        data = meta.read(folder)
+        if not data:
             continue
-        estado = dados.get("falhou") or (
-            "resumo pendente" if dados.get("resumo") == "pendente" else "ok")
-        origem = f"{dados['paginas']} pag" if dados.get("paginas") else dados.get(
-            "formato", "?")
-        print(f"{pasta.name:<45} {origem:>8}  "
-              f"{dados.get('fatias','?'):>3} fatias  {estado}")
+        state = data.get("failed") or (
+            "summary pending" if data.get("summary") == "pending" else "ok")
+        source = f"{data['pages']} pages" if data.get("pages") else data.get(
+            "format", "?")
+        print(f"{folder.name:<45} {source:>8}  "
+              f"{data.get('slices','?'):>3} slices  {state}")
     return 0
 
 
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="biblio",
-                                description="Camada de memoria documental para agentes")
-    p.add_argument("--out", help="pasta da bibliotheca (padrao: ~/biblio)")
-    sub = p.add_subparsers(dest="comando", required=True)
+                                description="Document memory layer for agents")
+    p.add_argument("--out", help="bibliotheca folder (default: ~/biblio)")
+    sub = p.add_subparsers(dest="command", required=True)
 
-    a = sub.add_parser("add", help="ingere .pdf, .md ou .txt — arquivo ou pasta")
-    a.add_argument("alvo")
+    a = sub.add_parser("add", help="ingest .pdf, .md or .txt — file or folder")
+    a.add_argument("target")
     a.add_argument("--device", default="auto", help="auto | cpu | cuda")
-    a.add_argument("--force", action="store_true", help="reprocessa mesmo sem mudanca")
-    a.add_argument("--summary", dest="resumo", action="store_const", const="sim",
-                   default="auto", help="gera resumo/termos por documento; baixa "
-                   "Ollama+qwen se preciso (perguntando antes)")
-    a.add_argument("--no-summary", dest="resumo", action="store_const", const="nao",
-                   help="nunca gera resumo/termos, mesmo com Ollama disponivel")
+    a.add_argument("--force", action="store_true", help="reprocess even without changes")
+    a.add_argument("--summary", dest="summary_mode", action="store_const", const="yes",
+                   default="auto", help="generate summary/terms per document; downloads "
+                   "Ollama+qwen if needed (asks first)")
+    a.add_argument("--no-summary", dest="summary_mode", action="store_const", const="no",
+                   help="never generate summary/terms, even with Ollama available")
     a.add_argument("--max-size", type=float, default=None, metavar="MB",
-                   help="pula arquivos maiores que N megabytes (ex: --max-size 10)")
+                   help="skip files larger than N megabytes (e.g. --max-size 10)")
     a.add_argument("--fast", action="store_true",
-                   help="pula OCR (Docling), usa so extracao nativa — rapido mas "
-                   "paginas escaneadas saem vazias")
+                   help="skip OCR (Docling), use only native extraction — fast but "
+                   "scanned pages come out empty")
 
-    b = sub.add_parser("search", help="busca e devolve ponteiros")
-    b.add_argument("consulta")
+    b = sub.add_parser("search", help="search and return pointers")
+    b.add_argument("query")
     b.add_argument("--top", type=int, default=5)
-    b.add_argument("--doc", help="restringe a um documento")
-    b.add_argument("--lib", help="restringe a uma bibliotheca: caminho ou nome "
-                                 "(padrao: todas as conhecidas)")
-    b.add_argument("--context", choices=("secao", "janela"), default="secao",
-                   help="secao: a fatia inteira (padrao); janela: so o trecho que casou")
+    b.add_argument("--doc", help="restrict to one document")
+    b.add_argument("--lib", help="restrict to one bibliotheca: path or name "
+                                 "(default: all known)")
+    b.add_argument("--context", choices=("section", "window"), default="section",
+                   help="section: entire slice (default); window: only the matched chunk")
     b.add_argument("--json", action="store_true")
 
-    i = sub.add_parser("index", help="regera INDEX.md e CLAUDE.md sem reprocessar")
-    i.add_argument("--summary", dest="resumo", action="store_const", const="sim",
-                   default="auto", help="preenche resumos pendentes; instala o "
-                   "Ollama+qwen se preciso (perguntando antes)")
-    i.add_argument("--no-summary", dest="resumo", action="store_const", const="nao",
-                   help="so regera INDEX.md/CLAUDE.md, sem tocar em resumo")
-    sub.add_parser("status", help="o que entrou, o que falhou, o que esta pendente")
-    sub.add_parser("libs", help="bibliothecas registradas")
-    sub.add_parser("skill", help="instala a skill do Claude Code (sem criar atalho)")
-    sub.add_parser("gui", help="sobe a interface em localhost")
-    sub.add_parser("shortcut", help="cria o atalho na area de trabalho")
-    sub.add_parser("version", help="mostra a versao instalada")
-    sub.add_parser("update", help="atualiza para a versao mais recente do GitHub")
+    i = sub.add_parser("index", help="regenerate INDEX.md and CLAUDE.md without reprocessing")
+    i.add_argument("--summary", dest="summary_mode", action="store_const", const="yes",
+                   default="auto", help="fill pending summaries; installs "
+                   "Ollama+qwen if needed (asks first)")
+    i.add_argument("--no-summary", dest="summary_mode", action="store_const", const="no",
+                   help="only regenerate INDEX.md/CLAUDE.md, without touching summaries")
+    sub.add_parser("status", help="what was ingested, what failed, what's pending")
+    sub.add_parser("libs", help="registered bibliothecas")
+    sub.add_parser("skill", help="install the Claude Code skill (without creating shortcut)")
+    sub.add_parser("gui", help="launch the localhost interface")
+    sub.add_parser("shortcut", help="create the desktop shortcut")
+    sub.add_parser("version", help="show installed version")
+    sub.add_parser("update", help="update to the latest GitHub version")
 
     args = p.parse_args(argv)
 
-    if args.comando in ("add", "gui", "index"):
-        from biblio.version_check import checar
-        checar()
+    if args.command in ("add", "gui", "index"):
+        from biblio.version_check import check
+        check()
 
-    if args.comando == "add":
-        contagem = pipeline.adicionar(Path(args.alvo), saida=args.out, device=args.device,
-                                      force=args.force, perguntar=_perguntar,
-                                      resumo=args.resumo, max_size_mb=args.max_size,
-                                      fast=args.fast)
-        index.gerar(saida=args.out, resumo="nao")
-        if contagem["ok"]:
-            skill.instalar()  # o produto sem ela nao funciona; nao dependa de o usuario lembrar
-        print(f"\n{contagem['ok']} processados, {contagem['pulado']} inalterados, "
-              f"{contagem['falhou']} falharam")
-        return 1 if contagem["falhou"] else 0
+    if args.command == "add":
+        count = pipeline.ingest(Path(args.target), output=args.out, device=args.device,
+                                force=args.force, ask=_confirm,
+                                summary=args.summary_mode, max_size_mb=args.max_size,
+                                fast=args.fast)
+        index.generate(output=args.out, summary="no")
+        if count["ok"]:
+            skill.install()
+        print(f"\n{count['ok']} processed, {count['skipped']} unchanged, "
+              f"{count['failed']} failed")
+        return 1 if count["failed"] else 0
 
-    if args.comando == "search":
-        achados = search.buscar(args.consulta, saida=args.lib or args.out,
-                                top=args.top, doc=args.doc, contexto=args.context)
-        print(json.dumps(achados, ensure_ascii=False) if args.json
-              else search.formatar(achados))
+    if args.command == "search":
+        results = search.search(args.query, output=args.lib or args.out,
+                                top=args.top, doc=args.doc, context=args.context)
+        print(json.dumps(results, ensure_ascii=False) if args.json
+              else search.format_results(results))
         return 0
 
-    if args.comando == "index":
-        destino = index.gerar(saida=args.out, resumo=args.resumo, perguntar=_perguntar)
-        skill.instalar()  # bibliotheca vinda de outra maquina entra na descricao aqui
-        print(destino)
+    if args.command == "index":
+        dest = index.generate(output=args.out, summary=args.summary_mode, ask=_confirm)
+        skill.install()
+        print(dest)
         return 0
 
-    if args.comando == "status":
+    if args.command == "status":
         return _status(args)
 
-    if args.comando == "libs":
-        for caminho in conhecidas_bibliotheca() or ["(nenhuma; rode `biblio add`)"]:
-            print(caminho)
+    if args.command == "libs":
+        for path in known_bibliothecas() or ["(none; run `biblio add`)"]:
+            print(path)
         return 0
 
-    if args.comando == "skill":
-        print(skill.instalar())
+    if args.command == "skill":
+        print(skill.install())
         return 0
 
-    if args.comando == "gui":
-        from biblio.gui import subir
-        subir(saida=args.out)
+    if args.command == "gui":
+        from biblio.gui import launch
+        launch(output=args.out)
         return 0
 
-    if args.comando == "shortcut":
-        from biblio.shortcut import criar
-        if lnk := criar():
+    if args.command == "shortcut":
+        from biblio.shortcut import create
+        if lnk := create():
             print(lnk)
         return 0
 
-    if args.comando == "version":
+    if args.command == "version":
         from importlib.metadata import version
         print(f"biblio {version('biblio')}")
         return 0
 
-    if args.comando == "update":
+    if args.command == "update":
         import subprocess
         url = "git+https://github.com/PedroHCosme/biblio.git"
-        print(f"Atualizando de {url} ...")
+        print(f"Updating from {url} ...")
         return subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", url]).returncode
 
     return 1

@@ -1,71 +1,66 @@
-"""Limpeza deterministica do markdown cru. Nenhum LLM aqui (spec 3, fora de escopo)."""
+"""Deterministic cleanup of raw markdown. No LLM here."""
 import re
 from collections import Counter
 
-LIMIAR_REPETICAO = 3       # linha curta repetida N+ vezes e cabecalho/rodape
-MAX_CARACTERES_CABECALHO = 80
+REPETITION_THRESHOLD = 3
+MAX_HEADER_CHARS = 80
 
-_HIFEN_QUEBRADO = re.compile(r"(\w)-\n([a-zà-ÿ])")
-_SO_NUMERO = re.compile(r"^\s*\d{1,4}\s*$")
-_PAGINA_DE = re.compile(r"^\s*(p[áa]g(ina)?\.?\s*)?\d{1,4}\s*(de|/|of)\s*\d{1,4}\s*$", re.I)
+_BROKEN_HYPHEN = re.compile(r"(\w)-\n([a-zà-ÿ])")
+_BARE_NUMBER = re.compile(r"^\s*\d{1,4}\s*$")
+_PAGE_OF = re.compile(r"^\s*(p[áa]g(ina)?\.?\s*)?\d{1,4}\s*(de|/|of)\s*\d{1,4}\s*$", re.I)
 _HEADING = re.compile(r"^(#{1,6})\s+\S")
-_MARCADOR = re.compile(r"^<!-- pag \d+ -->$")
-_ITEM_LISTA = re.compile(r"^([-*+]\s|\d+[.)]\s)")  # marcador REAL de lista, com espaco
-_ENFASE = "*_ "  # `**Rodape em negrito**` de slide nao e estrutura
+_MARKER = re.compile(r"^<!-- pag \d+ -->$")
+_LIST_ITEM = re.compile(r"^([-*+]\s|\d+[.)]\s)")
+_EMPHASIS = "*_ "
 
 
-def _sem_enfase(linha: str) -> str:
-    return linha.strip().strip(_ENFASE)
+def _strip_emphasis(line: str) -> str:
+    return line.strip().strip(_EMPHASIS)
 
 
-def _e_estrutura(linha: str) -> bool:
-    """Heading, lista, tabela ou marcador: nunca some, por mais que se repita.
-
-    `**Texto**` NAO conta: rodape de slide vem em negrito e precisa poder sumir.
-    """
-    despido = linha.strip()
+def _is_structure(line: str) -> bool:
+    """Heading, list, table, or marker: never removed, no matter how often repeated."""
+    stripped = line.strip()
     return bool(
-        _HEADING.match(despido)
-        or _MARCADOR.match(despido)
-        or _ITEM_LISTA.match(despido)
-        or despido.startswith(("|", ">", "```"))
+        _HEADING.match(stripped)
+        or _MARKER.match(stripped)
+        or _LIST_ITEM.match(stripped)
+        or stripped.startswith(("|", ">", "```"))
     )
 
 
-def _remover_repetidos(linhas: list[str]) -> list[str]:
-    # compara sem enfase: "**ELE085**" e "ELE085" sao o mesmo rodape repetido
-    candidatas = Counter(
-        _sem_enfase(linha) for linha in linhas
-        if _sem_enfase(linha) and len(_sem_enfase(linha)) <= MAX_CARACTERES_CABECALHO
-        and not _e_estrutura(linha)
+def _remove_repeated(lines: list[str]) -> list[str]:
+    candidates = Counter(
+        _strip_emphasis(line) for line in lines
+        if _strip_emphasis(line) and len(_strip_emphasis(line)) <= MAX_HEADER_CHARS
+        and not _is_structure(line)
     )
-    lixo = {texto for texto, n in candidatas.items() if n >= LIMIAR_REPETICAO}
-    return [linha for linha in linhas if _sem_enfase(linha) not in lixo]
+    junk = {text for text, n in candidates.items() if n >= REPETITION_THRESHOLD}
+    return [line for line in lines if _strip_emphasis(line) not in junk]
 
 
-def _remover_numeros_de_pagina(linhas: list[str]) -> list[str]:
-    # "**4**" no rodape do slide tambem e numero de pagina solto
+def _remove_page_numbers(lines: list[str]) -> list[str]:
     return [
-        linha for linha in linhas
-        if not (_SO_NUMERO.match(_sem_enfase(linha)) or _PAGINA_DE.match(_sem_enfase(linha)))
+        line for line in lines
+        if not (_BARE_NUMBER.match(_strip_emphasis(line)) or _PAGE_OF.match(_strip_emphasis(line)))
     ]
 
 
-def _promover_hierarquia(linhas: list[str]) -> list[str]:
-    niveis = [len(m.group(1)) for linha in linhas if (m := _HEADING.match(linha.strip()))]
-    if not niveis or min(niveis) == 1:
-        return linhas
-    delta = min(niveis) - 1
+def _promote_hierarchy(lines: list[str]) -> list[str]:
+    levels = [len(m.group(1)) for line in lines if (m := _HEADING.match(line.strip()))]
+    if not levels or min(levels) == 1:
+        return lines
+    delta = min(levels) - 1
     return [
-        linha[delta:] if _HEADING.match(linha.strip()) and linha.startswith("#") else linha
-        for linha in linhas
+        line[delta:] if _HEADING.match(line.strip()) and line.startswith("#") else line
+        for line in lines
     ]
 
 
-def normalizar(markdown: str) -> str:
-    texto = _HIFEN_QUEBRADO.sub(r"\1\2", markdown)
-    linhas = texto.split("\n")
-    linhas = _remover_repetidos(linhas)
-    linhas = _remover_numeros_de_pagina(linhas)
-    linhas = _promover_hierarquia(linhas)
-    return re.sub(r"\n{3,}", "\n\n", "\n".join(linhas)).strip() + "\n"
+def normalize(markdown: str) -> str:
+    text = _BROKEN_HYPHEN.sub(r"\1\2", markdown)
+    lines = text.split("\n")
+    lines = _remove_repeated(lines)
+    lines = _remove_page_numbers(lines)
+    lines = _promote_hierarchy(lines)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip() + "\n"

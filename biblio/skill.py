@@ -1,173 +1,138 @@
-"""O texto que ensina o agente, e a instalacao dele.
+"""The text that teaches the agent, and its installation.
 
-A skill vive em ~/.claude/skills e cobre o Claude Code sem o usuario apontar nada.
-O CLAUDE.md vive dentro da pasta e cobre a bibliotheca copiada para outra maquina,
-o Claude Desktop, o Cowork e o ChatGPT. Mesmo protocolo, dois alcances.
+The skill lives in ~/.claude/skills and covers Claude Code without the user pointing anything.
+The CLAUDE.md lives inside the folder and covers a bibliotheca copied to another machine,
+Claude Desktop, Cowork, and ChatGPT. Same protocol, two scopes.
 """
 import sys
 from pathlib import Path
 
-from biblio.paths import conhecidas_bibliotheca
+from biblio.paths import known_bibliothecas
 
-DESTINO = Path.home() / ".claude" / "skills" / "bibliotheca"
-MAX_NOMES = 8  # ponytail: descricao e contexto permanente; nao vire lista de 50 pastas
+DEST = Path.home() / ".claude" / "skills" / "bibliotheca"
+MAX_NAMES = 8
 
 
-def _executavel() -> str:
-    """Caminho absoluto do `biblio`, para a skill nao depender de PATH.
-
-    Medido na Tarefa 0.0: o shell POSIX do agente pode receber o PATH do Windows
-    como UMA entrada so, e ai `biblio` da `command not found` mesmo instalado. O
-    agente se recupera trocando de shell, mas gasta duas chamadas para descobrir
-    algo que a skill ja sabia na hora de se instalar.
-
-    So a skill leva o caminho: ela e local a maquina e se reescreve a cada
-    ingestao. O CLAUDE.md viaja e continua dizendo so `biblio`.
-    """
-    for candidato in (Path(sys.executable).parent / "Scripts" / "biblio.exe",
+def _executable() -> str:
+    """Absolute path to `biblio`, so the skill doesn't depend on PATH."""
+    for candidate in (Path(sys.executable).parent / "Scripts" / "biblio.exe",
                       Path(sys.executable).with_name("biblio")):
-        if candidato.exists():
-            return f'"{candidato}"'
-    return "biblio"  # instalado de outro jeito; que o PATH resolva
+        if candidate.exists():
+            return f'"{candidate}"'
+    return "biblio"
 
 
-# Dois campos: `{comando}` (caminho absoluto na skill, `biblio` no CLAUDE.md) e
-# `{escopo}` (vazio na skill, ` --lib <caminho>` no CLAUDE.md).
-# ponytail: .format(), entao nao ponha chave literal neste texto.
-PROTOCOLO = """\
-## Protocolo
+PROTOCOL = """\
+## Protocol
 
-**1. Comece pela busca, sempre.**
+**1. Always start with search.**
 
 ```bash
-{comando} search "<a pergunta reescrita em termos do dominio>"{escopo}
+{command} search "<the question rewritten in domain terms>"{scope}
 ```
 
-Reescreva antes de buscar. "Quanto de ferro preciso ancorar?" busca mal;
-"comprimento de ancoragem armadura passiva" busca bem.
+Rewrite before searching. "How much rebar do I need to anchor?" searches poorly;
+"anchorage length passive reinforcement" searches well.
 
-Cada resultado e uma linha: caminho absoluto, intervalo de linhas, score, heading.
+Each result is one line: absolute path, line range, score, heading.
 
 ```
 C:\\\\Users\\\\...\\\\biblio\\\\nbr-6118\\\\09-ancoragem.md:1-84  0.032  9.4 Comprimento de ancoragem
 ```
 
-**Nunca o conteudo** — isso e proposital.
+**Never the content** — that's intentional.
 
-**2. Leia o intervalo que a busca devolveu, com `offset` e `limit`.**
+**2. Read the range the search returned, using `offset` and `limit`.**
 
-O intervalo e a **secao inteira** que casou (delimitada por heading, no maximo
-~2000 tokens). Para `...09-ancoragem.md:112-195`, use `Read` com `offset=112` e
+The range is the **entire section** that matched (delimited by heading, at most
+~2000 tokens). For `...09-ancoragem.md:112-195`, use `Read` with `offset=112` and
 `limit=84`.
 
-**`limit` e a quantidade de linhas — `fim - inicio + 1` — nao a linha final.**
-Para `:19-36`, e `offset=19` e `limit=18`.
+**`limit` is the number of lines — `end - start + 1` — not the final line.**
+For `:19-36`, it's `offset=19` and `limit=18`.
 
-Leia so o intervalo devolvido — nao os arquivos vizinhos. Se ainda faltar
-contexto, leia tambem a 2a linha de resultado. Se nada responder, busque de novo
-com outros termos. (`--context janela` devolve so o trecho exato, mais curto.)
+Read only the returned range — not neighboring files. If you still need context,
+read the 2nd result too. If nothing answers, search again with different terms.
+(`--context window` returns only the exact matched chunk, shorter.)
 
-**3. Busca vazia? Va para os termos do indice.**
+**3. Empty search? Go to the index terms.**
 
 ```bash
-grep -A4 -i "<termo>" <bibliotheca>/INDEX.md
+grep -A4 -i "<term>" <bibliotheca>/INDEX.md
 ```
 
-A linha `**Termos:**` de cada bloco e a rede de seguranca para identificadores
-exatos ("NBR 6118", "9.4.2", nome de peca) que a busca semantica erra.
+The `**Terms:**` line in each block is the safety net for exact identifiers
+("NBR 6118", "9.4.2", part name) that semantic search misses.
 
-**4. Nunca leia o `INDEX.md` inteiro.** Duzentos documentos dao 40 mil tokens.
-Ele foi escrito para `grep`, nao para leitura.
+**4. Never read the entire `INDEX.md`.** Two hundred documents yield 40k tokens.
+It was written for `grep`, not for reading.
 
-## Outros comandos
+## Other commands
 
-| Comando | Para que |
+| Command | Purpose |
 |---|---|
-| `biblio add <pasta>` | Ingere. **Nao gera resumo por padrao** — pergunte ao usuario e passe `--summary` so se ele quiser (isso pode baixar ~1,4 GB) |
-| `biblio search "x" --doc <nome>` | Restringe a um documento |
-| `biblio search "x" --lib <caminho>` | Restringe a uma bibliotheca |
-| `biblio search "x" --context janela` | Trecho minimo em vez da secao inteira |
-| `biblio libs` | Lista as bibliothecas registradas |
-| `biblio status` | O que entrou, o que falhou, o que esta pendente |
+| `biblio add <folder>` | Ingest. **Does not generate summaries by default** — ask the user and pass `--summary` only if they want it (this may download ~1.4 GB) |
+| `biblio search "x" --doc <name>` | Restrict to one document |
+| `biblio search "x" --lib <path>` | Restrict to one bibliotheca |
+| `biblio search "x" --context window` | Minimal chunk instead of full section |
+| `biblio libs` | List registered bibliothecas |
+| `biblio status` | What was ingested, what failed, what's pending |
 
-## Cuidados
+## Cautions
 
-- Bloco do `INDEX.md` com **AVISO** de OCR de baixa qualidade: o texto pode estar
-  corrompido. Diga isso ao usuario antes de citar numero de la.
-- Todo arquivo comeca com frontmatter (`doc`, `secao`, `pai`, e `paginas` quando a
-  origem era PDF). Use `paginas` para citar a pagina do original.
-- A bibliotheca nao guarda o arquivo original; `_meta.yaml` guarda o caminho dele.
+- Index block with **WARNING** about low-quality OCR: the text may be corrupted.
+  Tell the user before citing numbers from it.
+- Every file starts with frontmatter (`doc`, `section`, `parent`, and `pages` when
+  the source was PDF). Use `pages` to cite the original page.
+- The bibliotheca doesn't store the original file; `_meta.yaml` stores its path.
 """
 
-CABECALHO_SKILL = """# Bibliotheca de documentos
+SKILL_HEADER = """# Document bibliotheca
 
-Acervo local indexado pelo `biblio`. Grande demais para ler: o protocolo abaixo
-existe para achar o paragrafo certo sem carregar o acervo.
+Local indexed corpus managed by `biblio`. Too large to read: the protocol below
+exists to find the right paragraph without loading the corpus.
 
-O caminho abaixo esta completo de proposito: use exatamente como esta, em qualquer
-shell. Nao encurte para `biblio` — nem todo shell tem o PATH do Windows.
+The path below is complete on purpose: use it exactly as-is, in any shell.
+Do not shorten to `biblio` — not every shell has the Windows PATH.
 """
 
 
-def _descricao() -> str:
-    """A unica linha que fica em contexto o tempo todo, e por ela que o agente decide
-    se o acervo responde a pergunta. Os nomes reais das bibliothecas dizem mais que
-    qualquer adjetivo: "controle-digital, normas-abnt" e informacao; "documentos
-    tecnicos" e um chute que exclui o acervo de historia do usuario.
-    """
-    nomes = [Path(c).name for c in conhecidas_bibliotheca()[:MAX_NOMES]]
-    quais = f" (bibliothecas: {', '.join(nomes)})" if nomes else ""
-    return (f"Consultar o acervo de documentos do usuario{quais}. Use sempre que a "
-            "pergunta puder ser respondida por um documento do acervo em vez de "
-            "conhecimento geral.")
+def _description() -> str:
+    names = [Path(c).name for c in known_bibliothecas()[:MAX_NAMES]]
+    which = f" (bibliothecas: {', '.join(names)})" if names else ""
+    return (f"Search the user's document corpus{which}. Use whenever the "
+            "question can be answered by a corpus document instead of "
+            "general knowledge.")
 
 
-def texto_skill() -> str:
-    """Nao e constante: a descricao muda quando o usuario cria uma bibliotheca nova,
-    e o caminho do executavel muda de maquina.
-    """
-    corpo = CABECALHO_SKILL + "\n" + PROTOCOLO.format(comando=_executavel(), escopo="")
-    return f"---\nname: bibliotheca\ndescription: {_descricao()}\n---\n\n{corpo}"
+def skill_text() -> str:
+    body = SKILL_HEADER + "\n" + PROTOCOL.format(command=_executable(), scope="")
+    return f"---\nname: bibliotheca\ndescription: {_description()}\n---\n\n{body}"
 
 
-def texto_claude_md() -> str:
-    """O mesmo protocolo, mas com `--lib` — sem argumento, porque nada aqui depende
-    de onde a pasta esta.
-
-    E o que faz "aponte o Claude para esta pasta" significar "consulte esta
-    bibliotheca", e nao "consulte todas as registradas nesta maquina".
-
-    **Sem caminho absoluto de proposito.** Gravar aqui o caminho da maquina que
-    gerou o arquivo quebraria a pasta no instante em que ela fosse copiada ou
-    movida — e quebraria em silencio. O agente sabe de onde leu este arquivo; e
-    ele quem preenche o caminho.
-    """
+def claude_md_text() -> str:
     return f"""# Bibliotheca biblio
 
-Esta pasta e um acervo de documentos indexado. **Nao a leia por varredura** — sao
-centenas de milhares de tokens. Use `biblio search`, que devolve ponteiros.
+This folder is an indexed document corpus. **Do not scan it** — it's hundreds of
+thousands of tokens. Use `biblio search`, which returns pointers.
 
-Nos comandos abaixo, `--lib` recebe **o caminho desta pasta** — a mesma de onde
-voce leu este arquivo. O nome dela tambem serve, se ja for conhecida desta maquina
-(`biblio libs`). Usar uma pasta uma vez ja a torna conhecida.
+In the commands below, `--lib` takes **the path to this folder** — the same one
+you read this file from. Its name also works, if already known on this machine
+(`biblio libs`). Using a folder once makes it known.
 
-Se `biblio` der "command not found", o executavel existe mas nao esta no PATH
-deste shell. Tente por outro shell (no Windows, PowerShell) antes de concluir que
-a ferramenta nao esta instalada — e **nao** caia em ler a pasta por varredura.
+If `biblio` gives "command not found", the executable exists but isn't in this
+shell's PATH. Try another shell (on Windows, PowerShell) before concluding the
+tool is not installed — and **do not** fall back to scanning the folder.
 
-{PROTOCOLO.format(comando='biblio', escopo=' --lib "<caminho desta pasta>"')}"""
+{PROTOCOL.format(command='biblio', scope=' --lib "<path to this folder>"')}"""
 
 
-def instalar(avisar=print) -> Path:
-    """Sobrescreve a skill instalada. Idempotente, barato, roda a cada ingestao.
-
-    Roda depois de `registrar()`, para que a bibliotheca recem-criada ja apareca na
-    descricao.
-    """
-    DESTINO.mkdir(parents=True, exist_ok=True)
-    alvo = DESTINO / "SKILL.md"
-    texto = texto_skill()
-    if not alvo.exists() or alvo.read_text(encoding="utf-8") != texto:
-        alvo.write_text(texto, encoding="utf-8")
-        avisar(f"skill instalada em {alvo}")
-    return alvo
+def install(warn=print) -> Path:
+    """Overwrites the installed skill. Idempotent, cheap, runs on every ingestion."""
+    DEST.mkdir(parents=True, exist_ok=True)
+    target = DEST / "SKILL.md"
+    text = skill_text()
+    if not target.exists() or target.read_text(encoding="utf-8") != text:
+        target.write_text(text, encoding="utf-8")
+        warn(f"skill installed at {target}")
+    return target
