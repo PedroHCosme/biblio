@@ -18,7 +18,13 @@ Warm-up per config: for each cluster the session runs its `reask` query and
 `biblio hit`s the gold sibling 3x (weight 5). Bibliotheca reset between configs.
 
 Matrix: 3 fusion modes (flat / weighted / bonus) x 2 recording modes
-(hits_only / hits+appearances). Baseline = flat + hits+appearances.
+(hits_only / hits+appearances). Cold (no_frecency) is the reference row.
+
+Production ships ONE cell of this matrix — `bonus` fusion + `hits_only`
+recording. The other five exist only here: `_rank()` below carries a frozen
+local copy of all three fusion strategies plus the weight-1 appearance
+recording, so "was deleting flat / weighted / hits+appear the right call"
+stays re-runnable after those paths leave `biblio/`.
 """
 import os
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
@@ -31,6 +37,7 @@ except Exception:
     pass
 
 import sys
+from math import exp
 from pathlib import Path
 
 import numpy as np
@@ -38,7 +45,7 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from biblio import db, embed
-from biblio.search import search
+from biblio.search import MULTIPLE, K_RRF, BONUS_HEADING, _tokens
 
 # ---------- corpus: 6 clusters x 3 near-duplicate siblings ----------
 #
@@ -336,10 +343,98 @@ def build_bibliotheca(root: Path) -> Path:
     return root
 
 
-def warm_up(bib: Path, record_appearances: bool) -> None:
-    """Simulate a working session: for each cluster, search + hit the gold sibling 3x."""
+# ---- frozen copy of the three fusion strategies (production ships `bonus`) ----
+_W_BASE = 2.0      # weighted: frecency weight ceiling      (was db.BASE_WEIGHT)
+_W_SCALE = 1.0     # weighted: saturation scale             (was db.FRECENCY_SCALE)
+_BONUS_CAP = 0.03  # bonus: additive cap                    (db.MAX_BONUS)
+_BONUS_SCALE = 1.0 # bonus: divisor                         (db.BONUS_SCALE)
+
+
+def _rrf(lists, weights=None):
+    scores: dict = {}
+    for i, lst in enumerate(lists):
+        w = weights[i] if weights else 1.0
+        for pos, k in enumerate(lst, start=1):
+            scores[k] = scores.get(k, 0.0) + w / (K_RRF + pos)
+    return scores
+
+
+def _rank(bib: Path, query: str, mode: str | None, top: int = 5) -> list[str]:
+    """Top-N doc names for `query` under fusion `mode` (None = cold).
+
+    Mirrors biblio.search.search() for a single bibliotheca, with the three
+    fusion strategies frozen locally. `bonus` == what production ships.
+    """
+    con = db.connect(bib)
+    try:
+        vec = embed.vectorize_query(query)
+        cand = top * MULTIPLE
+        lists = [db.search_vector(con, vec, cand), db.search_fts(con, query, cand)]
+        cand_ids = {i for r in lists for i in r}
+        frec = dict(db.ranked_by_frecency(con, vec, cand_ids)) if mode else {}
+        if mode in ("flat", "weighted") and frec:
+            lists.append(sorted(frec, key=frec.get, reverse=True))
+        rows = db.details(con, list(cand_ids | set(frec)))
+    finally:
+        con.close()
+
+    if mode == "weighted" and frec:
+        w = _W_BASE * (1 - exp(-max(frec.values()) / _W_SCALE))
+        scored = _rrf(lists, [1.0, 1.0, w][:len(lists)])
+    else:
+        scored = _rrf(lists)
+
+    if mode == "bonus":
+        for k in list(scored):
+            if k in frec:
+                scored[k] += min(frec[k] / _BONUS_SCALE, _BONUS_CAP)
+
+    q_tok = _tokens(query)
+    if q_tok:
+        for k, row in rows.items():
+            m = q_tok & _tokens(row["section"] or "")
+            if m:
+                scored[k] = scored.get(k, 0.0) + BONUS_HEADING * len(m) / len(q_tok)
+
+    seen: set[str] = set()
+    out: list[str] = []
+    for cid, _ in sorted(scored.items(), key=lambda p: -p[1]):
+        row = rows.get(cid)
+        if row is None or row["doc"] in seen:
+            continue
+        seen.add(row["doc"])
+        out.append(row["doc"])
+        if len(out) == top:
+            break
+    return out
+
+
+def _record_appearances(bib: Path, query: str, mode: str) -> None:
+    """The weight-1 'this section showed up in a search' record that the deleted
+    `record_appearances=True` path used to write. Records the top-5 of the
+    session's own search."""
+    top5 = _rank(bib, query, mode)
+    vec_f16 = np.asarray(embed.vectorize_query(query), dtype="float16").tobytes()
+    con = db.connect(bib)
+    try:
+        session = db.get_session(con)
+        for doc_name in top5:
+            row = con.execute("SELECT id FROM chunks WHERE doc = ? LIMIT 1",
+                              (doc_name,)).fetchone()
+            if row:
+                db.record_access(con, row["id"], vec_f16, weight=1,
+                                 session_id=session)
+        db.save_last_query_vec(con, vec_f16)
+    finally:
+        con.close()
+
+
+def warm_up(bib: Path, mode: str, record_appearances: bool) -> None:
+    """Simulate a working session: for each cluster, search (+ optionally record
+    its appearances) then `biblio hit` the gold sibling 3x."""
     for query, gold_doc in SESSION:
-        search(query, output=bib, top=5, record_appearances=record_appearances)
+        if record_appearances:
+            _record_appearances(bib, query, mode)
         con = db.connect(bib)
         try:
             row = con.execute(
@@ -379,17 +474,12 @@ def evaluate(bib: Path, queries: list[tuple[str, str]], fusion_mode: str | None,
              top: int = 5) -> dict:
     """Run queries; return recall@1/@3, MRR and the per-query gold rank list.
 
-    fusion_mode=None means cold: no_frecency=True.
+    fusion_mode=None means cold (vector + FTS only).
     """
     ranks = []
     for query, gold_doc in queries:
-        if fusion_mode is None:
-            results = search(query, output=bib, top=top, no_frecency=True)
-        else:
-            results = search(query, output=bib, top=top, fusion_mode=fusion_mode,
-                             no_frecency=False, record_appearances=False)
-        rank = next((i for i, r in enumerate(results, 1)
-                     if r["doc"] == gold_doc), None)
+        docs = _rank(bib, query, fusion_mode, top)
+        rank = next((i for i, d in enumerate(docs, 1) if d == gold_doc), None)
         ranks.append(rank)
 
     n = len(queries)
@@ -419,7 +509,6 @@ CONFIGS = [
     ("weighted + hits+appear", "weighted", True),
     ("bonus + hits+appear",    "bonus",    True),
 ]
-BASELINE = "flat + hits+appear"
 
 
 def main():
@@ -445,7 +534,7 @@ def main():
         run_dir = base_dir / config_name.replace(" ", "_").replace("+", "_")
         shutil.copytree(corpus_dir, run_dir)
         print("  Warming up...")
-        warm_up(run_dir, record_appearances=record_app)
+        warm_up(run_dir, fusion_mode, record_app)
         report_calibration(run_dir)
         results[config_name] = {}
         for name, qs in QSETS:
@@ -470,7 +559,7 @@ def main():
             print(f"| {config_name:<26} | {r['recall@1']:>5} | "
                   f"{r['recall@3']:>5} | {r['MRR']:>5} | {regr:>4} |")
 
-    # deltas vs cold and vs baseline, averaged over the 3 sets
+    # avg MRR and regressions vs the cold reference, over the 3 sets
     def avg_mrr(res):  # res: {qset: metrics}
         return sum(res[q]["MRR"] for q, _ in QSETS) / len(QSETS)
 

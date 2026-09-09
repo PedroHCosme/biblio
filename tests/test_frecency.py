@@ -4,9 +4,9 @@ import base64
 import numpy as np
 import pytest
 
-from biblio import db
+from biblio import db, embed
 from biblio.embed import DIM
-from biblio.search import search, rrf
+from biblio.search import search
 from biblio.cli import main as cli_main
 from biblio.skill import skill_text, claude_md_text
 
@@ -213,35 +213,33 @@ def test_ranked_by_frecency_returns_scores(con):
 
 # --- Task 4: search integration ---
 
-def test_frecency_boosts_accessed_chunk(synthetic_bibliotheca):
-    """After hitting a chunk multiple times, it should rank higher on similar queries."""
-    query = "comprimento de ancoragem"
-    baseline = search(query, output=synthetic_bibliotheca, top=5)
-    assert baseline, "search must return results"
+def test_frecency_bonus_promotes_hit_chunk(synthetic_bibliotheca, monkeypatch):
+    """A chunk ranked below #1 cold is promoted to #1 once it has hit history —
+    this exercises the `scored[key] += min(...)` bonus loop directly."""
+    query = "ensaio de aderencia das barras"
+    cold = search(query, output=synthetic_bibliotheca, top=5, no_frecency=True)
+    assert len(cold) >= 2, "need a non-trivial cold ranking"
+    target = cold[1]["file"]
 
     con = db.connect(synthetic_bibliotheca)
     try:
-        vec = np.frombuffer(
-            db.get_last_query_vec(con), dtype="float16").astype("float32")
-        top_file = baseline[0]["file"]
-        row = con.execute(
-            "SELECT id FROM chunks WHERE file = ? LIMIT 1",
-            (top_file,)).fetchone()
-        assert row, f"chunk for {top_file} not found"
-        cid = row["id"]
-        vec_f16 = np.asarray(vec, dtype="float16").tobytes()
-        session = db.get_session(con)
+        vec_f16 = np.asarray(
+            embed.vectorize_query(query), dtype="float16").tobytes()
+        cid = con.execute("SELECT id FROM chunks WHERE file = ? LIMIT 1",
+                          (target,)).fetchone()["id"]
         for _ in range(5):
-            db.record_access(con, cid, vec_f16, weight=5, session_id=session)
+            db.record_access(con, cid, vec_f16, weight=5,
+                             session_id=db.get_session(con))
     finally:
         con.close()
 
-    boosted = search(query, output=synthetic_bibliotheca, top=5)
-    assert boosted[0]["file"] == top_file
+    monkeypatch.setattr(db, "MAX_BONUS", 1.0)  # make the bonus decisive
+    warm = search(query, output=synthetic_bibliotheca, top=5)
+    assert warm[0]["file"] == target, "hit chunk should be promoted to rank 1"
 
 
 def test_no_frecency_flag_skips_recording(tmp_path):
-    """With no_frecency=True, no access recording or last_query_vec saving."""
+    """With no_frecency=True, no access recording and no last_query_vec saving."""
     from biblio import embed
     con = db.connect(tmp_path)
     con.execute("INSERT OR IGNORE INTO config VALUES('model', ?)", (embed.MODEL,))
@@ -254,6 +252,29 @@ def test_no_frecency_flag_skips_recording(tmp_path):
         assert db.get_session(con) == 0, "search never increments session"
         rows = con.execute("SELECT COUNT(*) FROM accesses").fetchone()[0]
         assert rows == 0, "no accesses should be recorded with no_frecency"
+        assert db.get_last_query_vec(con) is None, \
+            "no_frecency must not save last_query_vec"
+    finally:
+        con.close()
+
+
+def test_plain_search_records_no_accesses(synthetic_bibliotheca):
+    """Only `biblio hit` writes accesses — a normal search records nothing but
+    the last_query_vec it needs to hand to `biblio hit`."""
+    con = db.connect(synthetic_bibliotheca)
+    try:
+        before = con.execute("SELECT COUNT(*) FROM accesses").fetchone()[0]
+    finally:
+        con.close()
+
+    assert search("comprimento de ancoragem", output=synthetic_bibliotheca, top=5)
+
+    con = db.connect(synthetic_bibliotheca)
+    try:
+        after = con.execute("SELECT COUNT(*) FROM accesses").fetchone()[0]
+        assert after == before, "search must not write access rows"
+        assert db.get_last_query_vec(con) is not None, \
+            "search still saves last_query_vec for `biblio hit`"
     finally:
         con.close()
 
@@ -273,78 +294,6 @@ def test_search_does_not_increment_session(tmp_path):
     try:
         assert db.get_session(con) == 0, \
             "search should not increment session counter"
-    finally:
-        con.close()
-
-
-def test_search_fusion_mode_flat(synthetic_bibliotheca):
-    """fusion_mode='flat' should work (current default behavior)."""
-    results = search("ancoragem", output=synthetic_bibliotheca, top=5,
-                     fusion_mode="flat")
-    assert results
-
-
-def test_search_fusion_mode_weighted(synthetic_bibliotheca):
-    """fusion_mode='weighted' should work without error."""
-    results = search("ancoragem", output=synthetic_bibliotheca, top=5,
-                     fusion_mode="weighted")
-    assert results
-
-
-def test_search_fusion_mode_bonus(synthetic_bibliotheca):
-    """fusion_mode='bonus' should work without error."""
-    results = search("ancoragem", output=synthetic_bibliotheca, top=5,
-                     fusion_mode="bonus")
-    assert results
-
-
-def test_search_fusion_weighted_and_bonus_run_frecency_math(synthetic_bibliotheca):
-    """The other fusion tests never populate accesses, so the weighted-weight and
-    bonus-additive code paths never execute. This one records real accesses so
-    `all_frecency_scores` is non-empty and the frec_weight / bonus formulas run."""
-    query = "comprimento de ancoragem"
-    baseline = search(query, output=synthetic_bibliotheca, top=5)
-    assert baseline, "search must return results"
-    top_file = baseline[0]["file"]
-
-    con = db.connect(synthetic_bibliotheca)
-    try:
-        vec = np.frombuffer(
-            db.get_last_query_vec(con), dtype="float16").astype("float32")
-        row = con.execute(
-            "SELECT id FROM chunks WHERE file = ? LIMIT 1", (top_file,)).fetchone()
-        assert row, f"chunk for {top_file} not found"
-        cid = row["id"]
-        vec_f16 = np.asarray(vec, dtype="float16").tobytes()
-        session = db.get_session(con)
-        for _ in range(5):
-            db.record_access(con, cid, vec_f16, weight=5, session_id=session)
-    finally:
-        con.close()
-
-    for mode in ("weighted", "bonus"):
-        res = search(query, output=synthetic_bibliotheca, top=5, fusion_mode=mode)
-        assert res, f"fusion_mode={mode} returned no results"
-        files = [r["file"] for r in res]
-        assert top_file in files, f"{mode}: heavily-accessed file dropped out"
-        assert files.index(top_file) == 0, \
-            f"{mode}: frecency math did not keep the boosted file on top"
-
-
-def test_search_record_appearances_false(tmp_path):
-    """record_appearances=False should skip access recording in search."""
-    from biblio import embed
-    con = db.connect(tmp_path)
-    con.execute("INSERT OR IGNORE INTO config VALUES('model', ?)", (embed.MODEL,))
-    con.commit()
-    con.close()
-
-    search("test", output=tmp_path, top=5, record_appearances=False)
-
-    con = db.connect(tmp_path)
-    try:
-        rows = con.execute("SELECT COUNT(*) FROM accesses").fetchone()[0]
-        assert rows == 0, "no accesses should be recorded with record_appearances=False"
     finally:
         con.close()
 
@@ -452,25 +401,3 @@ def test_protocol_step_numbering():
     assert "**3." in text
     assert "**4." in text
     assert "**5." in text
-
-
-# --- Weighted RRF and fusion constants ---
-
-def test_rrf_with_weights():
-    """Weighted list should contribute more than unweighted."""
-    list_a = ["x", "y", "z"]
-    list_b = ["y", "x", "z"]
-    # Equal weights = default behavior
-    equal = rrf([list_a, list_b])
-    # list_b weight=3 should boost "y" relative to "x"
-    weighted = rrf([list_a, list_b], weights=[1.0, 3.0])
-    assert weighted["y"] > weighted["x"], \
-        "y is rank-1 in the 3x-weighted list, should beat x"
-    assert equal["y"] == pytest.approx(equal["x"]), \
-        "without weights, x and y tie (each rank-1 in one list)"
-
-
-def test_rrf_weights_none_is_default():
-    """weights=None should produce identical results to no-arg call."""
-    lists = [["a", "b"], ["b", "a"]]
-    assert rrf(lists) == rrf(lists, weights=None)

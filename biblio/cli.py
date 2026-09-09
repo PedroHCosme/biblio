@@ -112,7 +112,7 @@ def main(argv=None) -> int:
                    help="section: entire slice (default); window: only the matched chunk")
     b.add_argument("--json", action="store_true")
     b.add_argument("--no-frecency", action="store_true",
-                   help="disable frecency boost and access recording for this search")
+                   help="disable the frecency boost for this search")
 
     i = sub.add_parser("index", help="regenerate INDEX.md and CLAUDE.md without reprocessing")
     i.add_argument("--summary", dest="summary_mode", action="store_const", const="yes",

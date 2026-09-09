@@ -332,17 +332,19 @@ saturates at `MAX_BONUS` for every warmed sibling.
   here is to reorder the retrieved siblings so the one you use lands at #1 —
   which is exactly what the recall@1 column shows it doing.
 
-### Decision
+### Decision — shipped
 
-Ship **`bonus` fusion + `hits_only` recording**. Delete the `flat` and
-`weighted` fusion paths and the weight-1 appearance recording; remove the
-`fusion_mode` and `record_appearances` parameters; drop `BASE_WEIGHT` /
-`FRECENCY_SCALE`; keep `MAX_BONUS` / `BONUS_SCALE`. `save_last_query_vec` stays
-unconditional (minus `no_frecency`) — `biblio hit` depends on it.
+**`bonus` fusion + `hits_only` recording** is the only behaviour now. The
+`flat` / `weighted` fusion paths and the weight-1 appearance recording are
+deleted; the `fusion_mode` and `record_appearances` parameters are gone;
+`BASE_WEIGHT` / `FRECENCY_SCALE` dropped, `MAX_BONUS` / `BONUS_SCALE` kept.
+`save_last_query_vec` still runs on every non-`--no-frecency` search — `biblio
+hit` depends on it.
 
-Once the params are gone the committed benchmark can no longer sweep the matrix
-against production; it keeps a frozen local copy of the three fusion formulas so
-"was the deletion right" stays re-runnable.
+`scripts/benchmark/04_frecency.py` carries a frozen local copy of all three
+fusion strategies (`_rank()`) plus the appearance-recording, so it still runs
+the full 6-config comparison after the production paths are gone. It reproduces
+every cell of the table above exactly — the reimplementation is faithful.
 
 ### Caveats
 
