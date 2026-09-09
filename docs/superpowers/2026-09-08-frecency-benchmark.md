@@ -208,3 +208,74 @@ decision on the fusion-vs-short-circuit question).
   which is exactly what Knob A changes.
 - n = 24 held-out queries. A recall@3 delta of +0.083 is 2 queries. Treat the
   direction as signal, not the magnitude.
+
+---
+
+## 7. Tuning benchmark results (2026-09-09)
+
+Committed benchmark: `scripts/benchmark/04_frecency.py`. Runs the real search
+path with real embeddings against a 20-doc synthetic corpus (12 confusable-pair
+docs + 8 distractors), warms up 12 gold topics with 3× weight-5 hits each, then
+evaluates the **6-config matrix** (3 fusion modes × 2 recording modes) on three
+query sets.
+
+Session semantics are now the fixed ones from this branch: the counter advances
+only on `biblio hit`, never per search (Knob A, shipped as
+`fix(frecency): session counter incremented by biblio hit, not search`).
+
+### Adversarial queries (24) — the only set with signal
+
+| config                     |  R@1  |  R@3  |  MRR  | regr vs base |
+|----------------------------|-------|-------|-------|--------------|
+| flat + hits_only           | 0.75  | 0.958 | 0.856 | 0            |
+| weighted + hits_only       | 0.75  | 0.958 | 0.856 | 0            |
+| **bonus + hits_only**      | 0.75  | **1.0** | **0.868** | **0**   |
+| flat + hits+appear (base)  | 0.75  | 0.958 | 0.849 | —            |
+| weighted + hits+appear     | 0.75  | 0.958 | 0.849 | 0            |
+| bonus + hits+appear        | 0.75  | 1.0   | 0.861 | 0            |
+
+Re-ask (12) and easy (12): **every config scores 1.0 / 1.0 / 1.0** — baseline is
+already at ceiling, so those sets give no discriminating signal. The ranking is
+decided entirely by the 24 adversarial queries.
+
+Calibration — median warm-up frecency score: **2.69** (hits_only), **2.99**
+(hits+appear).
+
+### Reading it
+
+- **`bonus` fusion wins.** Post-fusion additive bonus lifts adversarial R@3 to a
+  perfect 1.0 and MRR +0.019 over baseline, with **zero regressions**. It's the
+  only mode that moves R@3.
+- **`weighted` fusion does nothing** — byte-identical to `flat` in every cell on
+  this corpus. The dynamic RRF weight can't out-vote a dominant wrong document
+  any more than a flat vote could. Delete it.
+- **`hits_only` recording beats `hits+appear`** by a hair (MRR 0.856/0.868 vs
+  0.849/0.861). The weight-1 search-appearance records are mild noise, not
+  signal. Drop them.
+- **recall@1 is still flat everywhere.** Same finding as the MVP benchmark:
+  frecency denoises the 2–5 band and pushes distractors out of the top 5, but it
+  does not dislodge a confidently-wrong rank-1. That ceiling is structural, not a
+  tuning failure.
+- **Calibration is close to moot for `bonus` mode.** Observed scores (~2.7)
+  vastly exceed `BONUS_SCALE` (1.0), so `min(score / BONUS_SCALE, MAX_BONUS)`
+  saturates at `MAX_BONUS` (0.03 ≈ 2 RRF positions) for essentially every
+  warmed chunk. `MAX_BONUS` is the effective knob; `BONUS_SCALE` only matters for
+  nearly-decayed signals, where keeping the bonus small is the safe default.
+  Shipping `BONUS_SCALE = 1.0` — the value the winning run was measured with.
+
+### Decision
+
+Ship **`bonus` fusion + `hits_only` recording**. Task 7 deletes the `flat` and
+`weighted` code paths, removes the `fusion_mode` and `record_appearances`
+parameters, drops `BASE_WEIGHT` / `FRECENCY_SCALE`, and keeps `MAX_BONUS` /
+`BONUS_SCALE`. `save_last_query_vec` stays unconditional (minus `no_frecency`) —
+`biblio hit` depends on it.
+
+### Caveats
+
+- The margin is thin: +0.019 MRR is ~1 query's worth of rank movement across 24.
+  Direction is trustworthy, magnitude is not.
+- `weighted` being inert may be a corpus artifact (small, high-contrast). Deleting
+  it is still correct — a mode that never wins is dead weight, and the benchmark
+  is committed so it can be revisited.
+- Synthetic corpus, same limitations as §6.
