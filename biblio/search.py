@@ -61,9 +61,6 @@ def search(query: str, output=None, top: int = 5, doc: str | None = None,
             register(bibliotheca)
         con = db.connect(bibliotheca)
         try:
-            if not no_frecency:
-                db.increment_session(con)
-
             rankings = [db.search_vector(con, vector, candidates, doc),
                         db.search_fts(con, query, candidates, doc)]
 

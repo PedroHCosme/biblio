@@ -54,7 +54,9 @@ def _hit(pointer: str) -> int:
         if vec_f16 is None:
             print("no previous search found in this bibliotheca", file=sys.stderr)
             return 1
-        session = db.get_session(con)
+        # the only place the session counter advances — it's the frecency
+        # decay clock: one hit == one confirmed-useful interaction, not one search
+        session = db.increment_session(con)
         db.record_access(con, row["id"], vec_f16, weight=5, session_id=session)
     finally:
         con.close()

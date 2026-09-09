@@ -208,7 +208,7 @@ def test_frecency_boosts_accessed_chunk(synthetic_bibliotheca):
 
 
 def test_no_frecency_flag_skips_recording(tmp_path):
-    """With no_frecency=True, no session increment or access recording."""
+    """With no_frecency=True, no access recording or last_query_vec saving."""
     from biblio import embed
     con = db.connect(tmp_path)
     con.execute("INSERT OR IGNORE INTO config VALUES('model', ?)", (embed.MODEL,))
@@ -218,9 +218,28 @@ def test_no_frecency_flag_skips_recording(tmp_path):
     search("test", output=tmp_path, top=5, no_frecency=True)
     con = db.connect(tmp_path)
     try:
-        assert db.get_session(con) == 0, "session should not increment with no_frecency"
+        assert db.get_session(con) == 0, "search never increments session"
         rows = con.execute("SELECT COUNT(*) FROM accesses").fetchone()[0]
         assert rows == 0, "no accesses should be recorded with no_frecency"
+    finally:
+        con.close()
+
+
+def test_search_does_not_increment_session(tmp_path):
+    """search() should no longer increment the session counter."""
+    from biblio import embed
+    con = db.connect(tmp_path)
+    con.execute("INSERT OR IGNORE INTO config VALUES('model', ?)", (embed.MODEL,))
+    con.commit()
+    con.close()
+
+    search("test query", output=tmp_path, top=5)
+    search("another query", output=tmp_path, top=5)
+
+    con = db.connect(tmp_path)
+    try:
+        assert db.get_session(con) == 0, \
+            "search should not increment session counter"
     finally:
         con.close()
 
@@ -270,6 +289,33 @@ def test_cli_hit_accepts_section_pointer(synthetic_bibliotheca, monkeypatch):
     try:
         assert con.execute(
             "SELECT COUNT(*) FROM accesses WHERE weight = 5").fetchone()[0] >= 1
+    finally:
+        con.close()
+
+
+def test_cli_hit_increments_session(synthetic_bibliotheca, monkeypatch):
+    """biblio hit should increment the session counter."""
+    monkeypatch.setattr("biblio.paths.REGISTRY",
+                        synthetic_bibliotheca.parent / "bibliothecas.txt")
+    cli_main(["search", "ancoragem", "--lib", str(synthetic_bibliotheca)])
+
+    con = db.connect(synthetic_bibliotheca)
+    try:
+        session_before = db.get_session(con)
+        row = con.execute(
+            "SELECT doc, file, line_start, line_end FROM chunks LIMIT 1"
+        ).fetchone()
+        filepath = str((synthetic_bibliotheca / row["doc"] / row["file"]).resolve())
+        pointer = f"{filepath}:{row['line_start']}-{row['line_end']}"
+    finally:
+        con.close()
+
+    cli_main(["hit", pointer])
+
+    con = db.connect(synthetic_bibliotheca)
+    try:
+        assert db.get_session(con) == session_before + 1, \
+            "hit should increment session counter"
     finally:
         con.close()
 
