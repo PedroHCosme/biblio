@@ -361,8 +361,10 @@ def report_calibration(bib: Path) -> None:
     scores: list[float] = []
     try:
         for query, gold_doc in SESSION:
+            cids = [r[0] for r in con.execute(
+                "SELECT id FROM chunks WHERE doc = ?", (gold_doc,))]
             ranked = db.ranked_by_frecency(
-                con, embed.vectorize_query(query), 20, doc=gold_doc)
+                con, embed.vectorize_query(query), cids)
             if ranked:
                 scores.append(ranked[0][1])
     finally:

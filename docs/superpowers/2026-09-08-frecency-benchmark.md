@@ -351,3 +351,78 @@ against production; it keeps a frozen local copy of the three fusion formulas so
 - Synthetic near-duplicate siblings are an idealised version of the real case
   (same topic across editions / standards / vendors in one library). Real
   corpora are messier and the cold baseline would usually be a little better.
+
+---
+
+## 9. Memory / cost of the `accesses` table, and the candidate-scoping fix
+
+Measured on real SQLite DBs (not estimated).
+
+### What a record costs
+
+Each `accesses` row stores the full query vector as fp16 (`DIM` = 384 → 768 B)
+plus `chunk_id` / `weight` / `session_id`. **Measured 830 B/row** including the
+`idx_accesses_chunk` entry and SQLite overhead. Hard cap 20 rows/chunk
+(`ACCESS_CAP`); no global cap.
+
+### Disk — worst case (every chunk hit, cap full)
+
+| | per chunk |
+|---|---|
+| indexed content (fp32 vector + text + FTS) | ~5.8 KB |
+| frecency at 20 accesses | ~16.6 KB |
+| **ratio** | **frecency ≈ 2.85× the content, 74% of the file** |
+
+Extrapolated: 1 book (~600 ch) +10 MB · 20-book library (~12k ch) +200 MB ·
+100k ch +1.6 GB. Realistic heavy use (a few thousand distinct sections ever
+hit) → tens of MB. `hits+appear` would have reached the bad regime far faster
+(every search wrote its whole top-5) — another point for dropping it.
+
+### Latency — the real problem, now fixed
+
+`ranked_by_frecency` runs on every non-`--no-frecency` search. **Before this
+change it scanned every chunk ever accessed in the whole DB**, Python-looping a
+per-row fp16→fp32 dot product:
+
+| access rows in DB | old: added to every search |
+|---|---|
+| 4,000 | +80 ms |
+| 20,000 | +450 ms |
+| 100,000 | +1,480 ms |
+
+It grew monotonically with cumulative distinct sections hit — never corpus
+size, never recency, never shrinking. Search is ~100 ms warm, so a power user
+who had hit ~1,000 sections was paying 5× latency.
+
+**Fix (shipped):** `ranked_by_frecency` now takes the caller's candidate set
+(the vector + FTS hits, ~40 chunks) and scores only those —
+`WHERE chunk_id IN (…)`. This matches how the signal is actually used: `bonus`
+mode only re-ranks already-retrieved chunks, so scoring the rest of history was
+pure waste.
+
+| access rows in DB | new: added to every search |
+|---|---|
+| 20,000 | ~8 ms |
+| 100,000 | ~6 ms |
+| 400,000 | ~6 ms |
+
+**Flat, ~6 ms, independent of history size.** The 6-config benchmark is
+byte-identical before and after the change (with 24 docs every doc is always a
+candidate, so scoping is a behavioural no-op there) — confirming it only removes
+cost, not signal.
+
+Behaviour note: `flat` / `weighted` can no longer surface a frecency-only chunk
+that vector + FTS both missed. Irrelevant for the shipped `bonus` mode (never
+could), and those two modes are being deleted anyway.
+
+### Not done (available if disk ever matters)
+
+- Store the vector as int8 (halves the row to ~400 B) — skipped: adds
+  quantisation noise to the `SIMILARITY_THRESHOLD` / `PRUNE_THRESHOLD` maths for
+  a disk saving that is no longer on any critical path.
+- Real expiry: a record dissimilar to every future query is currently immortal
+  (pruning only fires when a *similar* query finds its contribution < 0.01). A
+  flat "drop anything older than N sessions" would bound disk regardless of
+  query patterns. Cheap, but not urgent now that read cost is O(candidates).
+- Vectorise `frecency_score` (one matmul instead of the per-row loop) — ~6 ms →
+  ~0.5 ms. Not worth it against a 100 ms search.

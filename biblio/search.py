@@ -74,7 +74,8 @@ def search(query: str, output=None, top: int = 5, doc: str | None = None,
                         db.search_fts(con, query, candidates, doc)]
 
             if not no_frecency:
-                frecency_ranked = db.ranked_by_frecency(con, vector, candidates, doc)
+                cand_ids = {i for r in rankings for i in r}
+                frecency_ranked = db.ranked_by_frecency(con, vector, cand_ids)
                 if frecency_ranked:
                     for cid, sc in frecency_ranked:
                         all_frecency_scores[(bibliotheca, cid)] = sc

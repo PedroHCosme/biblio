@@ -150,37 +150,40 @@ def frecency_score(accesses: list, query_vec: np.ndarray,
 
 
 def ranked_by_frecency(con: sqlite3.Connection, query_vec: np.ndarray,
-                       candidates: int, doc: str | None = None
-                       ) -> list[tuple[int, float]]:
-    session = get_session(con)
-    sql = ("SELECT DISTINCT a.chunk_id FROM accesses a "
-           "JOIN chunks c ON c.id = a.chunk_id")
-    params: list = []
-    if doc:
-        sql += " WHERE c.doc = ?"
-        params.append(doc)
-    chunk_ids = [r[0] for r in con.execute(sql, params).fetchall()]
+                       chunk_ids) -> list[tuple[int, float]]:
+    """Frecency score for the candidate chunks that carry access history.
+
+    Scoped to the caller's candidate set (the vector/FTS hits), so cost is
+    O(candidates) per search — not O(every chunk ever accessed). Returns
+    (chunk_id, score) pairs sorted by score descending; chunks with no history
+    or a zero score are omitted. Negligible access rows found along the way are
+    pruned.
+    """
+    chunk_ids = list(chunk_ids)
     if not chunk_ids:
         return []
+    session = get_session(con)
+    placeholders = ",".join("?" * len(chunk_ids))
+    by_chunk: dict[int, list[dict]] = {}
+    for r in con.execute(
+            f"SELECT id, chunk_id, query_vec, weight, session_id FROM accesses "
+            f"WHERE chunk_id IN ({placeholders})", chunk_ids):
+        by_chunk.setdefault(r["chunk_id"], []).append(dict(r))
 
-    scores = {}
-    all_prune = []
-    for cid in chunk_ids:
-        accs = [dict(r) for r in con.execute(
-            "SELECT id, query_vec, weight, session_id FROM accesses "
-            "WHERE chunk_id = ?", (cid,)).fetchall()]
+    scores: dict[int, float] = {}
+    all_prune: list[int] = []
+    for cid, accs in by_chunk.items():
         sc, prune = frecency_score(accs, query_vec, session)
         if sc > 0:
             scores[cid] = sc
         all_prune.extend(prune)
 
     if all_prune:
-        placeholders = ",".join("?" * len(all_prune))
+        ph = ",".join("?" * len(all_prune))
         with con:
-            con.execute(f"DELETE FROM accesses WHERE id IN ({placeholders})",
-                        all_prune)
+            con.execute(f"DELETE FROM accesses WHERE id IN ({ph})", all_prune)
 
-    return sorted(scores.items(), key=lambda x: x[1], reverse=True)[:candidates]
+    return sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
 
 def replace_document(con: sqlite3.Connection, doc: str, chunks: list[dict],
