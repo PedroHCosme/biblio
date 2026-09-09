@@ -50,6 +50,7 @@ def search(query: str, output=None, top: int = 5, doc: str | None = None,
 
     lists: list[list] = []
     rows: dict = {}
+    frecency_scores: dict[tuple, float] = {}
     for bibliotheca in all_libs(output):
         if not (bibliotheca / db.DB_FILE).exists():
             if output is None:
@@ -61,16 +62,13 @@ def search(query: str, output=None, top: int = 5, doc: str | None = None,
             register(bibliotheca)
         con = db.connect(bibliotheca)
         try:
-            if not no_frecency:
-                db.increment_session(con)
-
             rankings = [db.search_vector(con, vector, candidates, doc),
                         db.search_fts(con, query, candidates, doc)]
 
             if not no_frecency:
-                frecency_ids = db.ranked_by_frecency(con, vector, candidates, doc)
-                if frecency_ids:
-                    rankings.append(frecency_ids)
+                cand_ids = {i for r in rankings for i in r}
+                for cid, sc in db.ranked_by_frecency(con, vector, cand_ids):
+                    frecency_scores[(bibliotheca, cid)] = sc
 
             for chunk_id, row in db.details(
                     con, list({i for r in rankings for i in r})).items():
@@ -79,8 +77,17 @@ def search(query: str, output=None, top: int = 5, doc: str | None = None,
         finally:
             con.close()
 
-    q_tokens = _tokens(query)
     scored = rrf(lists)
+
+    # Frecency enters as a capped additive bonus (~2 RRF positions) on chunks
+    # already retrieved by vector/FTS — enough to reorder the 2-5 band, rarely
+    # enough to flip a confident rank-1. A chunk with only frecency history and
+    # no lexical/semantic hit is not pulled in.
+    for key in list(scored):
+        if key in frecency_scores:
+            scored[key] += min(frecency_scores[key] / db.BONUS_SCALE, db.MAX_BONUS)
+
+    q_tokens = _tokens(query)
     if q_tokens:
         for key, row in rows.items():
             match = q_tokens & _tokens(row["section"] or "")
@@ -110,17 +117,12 @@ def search(query: str, output=None, top: int = 5, doc: str | None = None,
         if len(results) == top:
             break
 
+    # Save the query vector so `biblio hit` can record the section the caller
+    # actually used. This is the only write a plain search makes.
     if not no_frecency and result_keys:
-        by_lib: dict[Path, list[int]] = {}
-        for bib, cid in result_keys:
-            by_lib.setdefault(bib, []).append(cid)
-        for bib, cids in by_lib.items():
+        for bib in {b for b, _ in result_keys}:
             con = db.connect(bib)
             try:
-                session = db.get_session(con)
-                for cid in cids:
-                    db.record_access(con, cid, vec_f16, weight=1,
-                                     session_id=session)
                 db.save_last_query_vec(con, vec_f16)
             finally:
                 con.close()

@@ -54,7 +54,9 @@ def _hit(pointer: str) -> int:
         if vec_f16 is None:
             print("no previous search found in this bibliotheca", file=sys.stderr)
             return 1
-        session = db.get_session(con)
+        # the only place the session counter advances — it's the frecency
+        # decay clock: one hit == one confirmed-useful interaction, not one search
+        session = db.increment_session(con)
         db.record_access(con, row["id"], vec_f16, weight=5, session_id=session)
     finally:
         con.close()
@@ -110,7 +112,7 @@ def main(argv=None) -> int:
                    help="section: entire slice (default); window: only the matched chunk")
     b.add_argument("--json", action="store_true")
     b.add_argument("--no-frecency", action="store_true",
-                   help="disable frecency boost and access recording for this search")
+                   help="disable the frecency boost for this search")
 
     i = sub.add_parser("index", help="regenerate INDEX.md and CLAUDE.md without reprocessing")
     i.add_argument("--summary", dest="summary_mode", action="store_const", const="yes",

@@ -4,7 +4,7 @@ import base64
 import numpy as np
 import pytest
 
-from biblio import db
+from biblio import db, embed
 from biblio.embed import DIM
 from biblio.search import search
 from biblio.cli import main as cli_main
@@ -169,46 +169,77 @@ def test_ranked_by_frecency_returns_scored_chunks(con):
     for _ in range(3):
         db.record_access(con, cid1, vec_f16, weight=5, session_id=1)
     db.record_access(con, cid2, vec_f16, weight=1, session_id=1)
-    ranked = db.ranked_by_frecency(con, v, candidates=10)
-    assert ranked[0] == cid1, "chunk with more/heavier accesses should rank first"
-    assert cid2 in ranked
+    ranked = db.ranked_by_frecency(con, v, [cid1, cid2])
+    ids = [cid for cid, _ in ranked]
+    assert ids[0] == cid1, "chunk with more/heavier accesses should rank first"
+    assert cid2 in ids
 
 
 def test_ranked_by_frecency_empty_when_no_accesses(con):
-    assert db.ranked_by_frecency(con, np.zeros(DIM, dtype="float32"), candidates=10) == []
+    cid = _insert_chunk(con)
+    assert db.ranked_by_frecency(con, np.zeros(DIM, dtype="float32"), [cid]) == []
+    assert db.ranked_by_frecency(con, np.zeros(DIM, dtype="float32"), []) == []
+
+
+def test_ranked_by_frecency_ignores_chunks_outside_candidate_set(con):
+    """A hit chunk that isn't in the candidate list is not scored."""
+    cid_in = _insert_chunk(con, doc="doc-in", file="01-in.md")
+    cid_out = _insert_chunk(con, doc="doc-out", file="01-out.md")
+    v = np.random.randn(DIM).astype("float32")
+    v /= np.linalg.norm(v)
+    vec_f16 = np.asarray(v, dtype="float16").tobytes()
+    db.increment_session(con)
+    db.record_access(con, cid_out, vec_f16, weight=5, session_id=1)
+    ranked = db.ranked_by_frecency(con, v, [cid_in])
+    assert ranked == [], "cid_out has history but isn't a candidate"
+
+
+def test_ranked_by_frecency_returns_scores(con):
+    """ranked_by_frecency returns (chunk_id, score) tuples."""
+    cid = _insert_chunk(con, doc="doc-s", file="01-s.md")
+    v = np.random.randn(DIM).astype("float32")
+    v /= np.linalg.norm(v)
+    vec_f16 = np.asarray(v, dtype="float16").tobytes()
+    db.increment_session(con)
+    db.record_access(con, cid, vec_f16, weight=5, session_id=1)
+    ranked = db.ranked_by_frecency(con, v, [cid])
+    assert len(ranked) >= 1
+    assert isinstance(ranked[0], tuple), "should return (chunk_id, score) tuples"
+    assert len(ranked[0]) == 2
+    chunk_id, score = ranked[0]
+    assert chunk_id == cid
+    assert score > 0
 
 
 # --- Task 4: search integration ---
 
-def test_frecency_boosts_accessed_chunk(synthetic_bibliotheca):
-    """After hitting a chunk multiple times, it should rank higher on similar queries."""
-    query = "comprimento de ancoragem"
-    baseline = search(query, output=synthetic_bibliotheca, top=5)
-    assert baseline, "search must return results"
+def test_frecency_bonus_promotes_hit_chunk(synthetic_bibliotheca, monkeypatch):
+    """A chunk ranked below #1 cold is promoted to #1 once it has hit history —
+    this exercises the `scored[key] += min(...)` bonus loop directly."""
+    query = "ensaio de aderencia das barras"
+    cold = search(query, output=synthetic_bibliotheca, top=5, no_frecency=True)
+    assert len(cold) >= 2, "need a non-trivial cold ranking"
+    target = cold[1]["file"]
 
     con = db.connect(synthetic_bibliotheca)
     try:
-        vec = np.frombuffer(
-            db.get_last_query_vec(con), dtype="float16").astype("float32")
-        top_file = baseline[0]["file"]
-        row = con.execute(
-            "SELECT id FROM chunks WHERE file = ? LIMIT 1",
-            (top_file,)).fetchone()
-        assert row, f"chunk for {top_file} not found"
-        cid = row["id"]
-        vec_f16 = np.asarray(vec, dtype="float16").tobytes()
-        session = db.get_session(con)
+        vec_f16 = np.asarray(
+            embed.vectorize_query(query), dtype="float16").tobytes()
+        cid = con.execute("SELECT id FROM chunks WHERE file = ? LIMIT 1",
+                          (target,)).fetchone()["id"]
         for _ in range(5):
-            db.record_access(con, cid, vec_f16, weight=5, session_id=session)
+            db.record_access(con, cid, vec_f16, weight=5,
+                             session_id=db.get_session(con))
     finally:
         con.close()
 
-    boosted = search(query, output=synthetic_bibliotheca, top=5)
-    assert boosted[0]["file"] == top_file
+    monkeypatch.setattr(db, "MAX_BONUS", 1.0)  # make the bonus decisive
+    warm = search(query, output=synthetic_bibliotheca, top=5)
+    assert warm[0]["file"] == target, "hit chunk should be promoted to rank 1"
 
 
 def test_no_frecency_flag_skips_recording(tmp_path):
-    """With no_frecency=True, no session increment or access recording."""
+    """With no_frecency=True, no access recording and no last_query_vec saving."""
     from biblio import embed
     con = db.connect(tmp_path)
     con.execute("INSERT OR IGNORE INTO config VALUES('model', ?)", (embed.MODEL,))
@@ -218,9 +249,51 @@ def test_no_frecency_flag_skips_recording(tmp_path):
     search("test", output=tmp_path, top=5, no_frecency=True)
     con = db.connect(tmp_path)
     try:
-        assert db.get_session(con) == 0, "session should not increment with no_frecency"
+        assert db.get_session(con) == 0, "search never increments session"
         rows = con.execute("SELECT COUNT(*) FROM accesses").fetchone()[0]
         assert rows == 0, "no accesses should be recorded with no_frecency"
+        assert db.get_last_query_vec(con) is None, \
+            "no_frecency must not save last_query_vec"
+    finally:
+        con.close()
+
+
+def test_plain_search_records_no_accesses(synthetic_bibliotheca):
+    """Only `biblio hit` writes accesses — a normal search records nothing but
+    the last_query_vec it needs to hand to `biblio hit`."""
+    con = db.connect(synthetic_bibliotheca)
+    try:
+        before = con.execute("SELECT COUNT(*) FROM accesses").fetchone()[0]
+    finally:
+        con.close()
+
+    assert search("comprimento de ancoragem", output=synthetic_bibliotheca, top=5)
+
+    con = db.connect(synthetic_bibliotheca)
+    try:
+        after = con.execute("SELECT COUNT(*) FROM accesses").fetchone()[0]
+        assert after == before, "search must not write access rows"
+        assert db.get_last_query_vec(con) is not None, \
+            "search still saves last_query_vec for `biblio hit`"
+    finally:
+        con.close()
+
+
+def test_search_does_not_increment_session(tmp_path):
+    """search() should no longer increment the session counter."""
+    from biblio import embed
+    con = db.connect(tmp_path)
+    con.execute("INSERT OR IGNORE INTO config VALUES('model', ?)", (embed.MODEL,))
+    con.commit()
+    con.close()
+
+    search("test query", output=tmp_path, top=5)
+    search("another query", output=tmp_path, top=5)
+
+    con = db.connect(tmp_path)
+    try:
+        assert db.get_session(con) == 0, \
+            "search should not increment session counter"
     finally:
         con.close()
 
@@ -270,6 +343,33 @@ def test_cli_hit_accepts_section_pointer(synthetic_bibliotheca, monkeypatch):
     try:
         assert con.execute(
             "SELECT COUNT(*) FROM accesses WHERE weight = 5").fetchone()[0] >= 1
+    finally:
+        con.close()
+
+
+def test_cli_hit_increments_session(synthetic_bibliotheca, monkeypatch):
+    """biblio hit should increment the session counter."""
+    monkeypatch.setattr("biblio.paths.REGISTRY",
+                        synthetic_bibliotheca.parent / "bibliothecas.txt")
+    cli_main(["search", "ancoragem", "--lib", str(synthetic_bibliotheca)])
+
+    con = db.connect(synthetic_bibliotheca)
+    try:
+        session_before = db.get_session(con)
+        row = con.execute(
+            "SELECT doc, file, line_start, line_end FROM chunks LIMIT 1"
+        ).fetchone()
+        filepath = str((synthetic_bibliotheca / row["doc"] / row["file"]).resolve())
+        pointer = f"{filepath}:{row['line_start']}-{row['line_end']}"
+    finally:
+        con.close()
+
+    cli_main(["hit", pointer])
+
+    con = db.connect(synthetic_bibliotheca)
+    try:
+        assert db.get_session(con) == session_before + 1, \
+            "hit should increment session counter"
     finally:
         con.close()
 

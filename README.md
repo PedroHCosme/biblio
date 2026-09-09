@@ -120,19 +120,20 @@ triage → convert → normalize → slice → summarize → index
 - **index** — generate `INDEX.md` (a `grep` target, one block per document) and
   `CLAUDE.md` (so pointing an agent at the folder is enough).
 
-Search is **hybrid** — semantic (vector) + literal (SQLite FTS5) + **frecency**
-— fused by Reciprocal Rank Fusion, deduplicated per file, returning the best
-pointer for each. Cross-lingual works: a Portuguese question reaches an English
-datasheet in the same library, and vice-versa.
+Search is **hybrid** — semantic (vector) + literal (SQLite FTS5) fused by
+Reciprocal Rank Fusion, then a **frecency** bonus on top — deduplicated per
+file, returning the best pointer for each. Cross-lingual works: a Portuguese
+question reaches an English datasheet in the same library, and vice-versa.
 
-**Frecency** (frequency + recency) is the third signal: every search records
-which sections it returned, against a compressed copy of the query vector. On
-later searches with a *similar* query, sections the agent has repeatedly landed
-on get a rank boost that decays over sessions (7-session half-life). `biblio
-hit` lets the agent mark a section as actually useful — that counts 5× a plain
-search appearance. Records live in the library's SQLite file (capped at 20 per
-section, negligible ones pruned on read); `--no-frecency` skips the whole
-mechanism for one search.
+**Frecency** (frequency + recency) is the third signal. A plain search records
+nothing — only `biblio hit` does: it marks the section that actually answered
+you, storing a compressed copy of the query vector at weight 5. On a later
+search with a *similar* query, a section you've hit before gets a small additive
+rank bonus (capped at ~2 positions), halving every 7 hits (one hit = one
+"session"). The bonus only reorders sections the base search already found — it
+never pulls in an unrelated one, and rarely flips a confident top result.
+Records live in the library's SQLite file (capped at 20 per section, negligible
+ones pruned on read); `--no-frecency` skips it for one search.
 
 ## Stack
 
@@ -230,7 +231,7 @@ biblio search "slip"            --lib physics        # one library (name or path
 biblio search "torque"          --doc aula-9         # one document
 biblio search "eddy losses"     --top 10             # more hits (default 5)
 biblio search "rotor bar"       --json               # machine-readable
-biblio search "rotor bar"       --no-frecency        # skip the frecency boost + recording
+biblio search "rotor bar"       --no-frecency        # skip the frecency boost
 ```
 
 After reading a hit that answered the question, mark it useful so it ranks
