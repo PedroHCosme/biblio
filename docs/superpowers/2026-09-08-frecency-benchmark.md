@@ -211,71 +211,143 @@ decision on the fusion-vs-short-circuit question).
 
 ---
 
-## 7. Tuning benchmark results (2026-09-09)
+## 7. Tuning benchmark — first corpus (2026-09-09), superseded by §8
 
-Committed benchmark: `scripts/benchmark/04_frecency.py`. Runs the real search
-path with real embeddings against a 20-doc synthetic corpus (12 confusable-pair
-docs + 8 distractors), warms up 12 gold topics with 3× weight-5 hits each, then
-evaluates the **6-config matrix** (3 fusion modes × 2 recording modes) on three
-query sets.
+First committed version of `scripts/benchmark/04_frecency.py` used a 12-topic
+corpus where each topic had exactly one matching document. Result: **cold
+retrieval already scored 1.0 / 1.0 / 1.0 on the re-ask and easy sets** — no
+headroom, so frecency could not show a gain there and the whole comparison
+rested on 24 adversarial queries with ~1-query deltas. `bonus + hits_only` won
+by +0.019 MRR; `weighted` was byte-identical to `flat`; `hits_only` beat
+`hits+appear` by a hair. The direction was right but the corpus was too easy to
+prove anything. Replaced — see §8.
 
-Session semantics are now the fixed ones from this branch: the counter advances
-only on `biblio hit`, never per search (Knob A, shipped as
-`fix(frecency): session counter incremented by biblio hit, not search`).
+---
 
-### Adversarial queries (24) — the only set with signal
+## 8. Tuning benchmark — headroom corpus (2026-09-09)
 
-| config                     |  R@1  |  R@3  |  MRR  | regr vs base |
-|----------------------------|-------|-------|-------|--------------|
-| flat + hits_only           | 0.75  | 0.958 | 0.856 | 0            |
-| weighted + hits_only       | 0.75  | 0.958 | 0.856 | 0            |
-| **bonus + hits_only**      | 0.75  | **1.0** | **0.868** | **0**   |
-| flat + hits+appear (base)  | 0.75  | 0.958 | 0.849 | —            |
-| weighted + hits+appear     | 0.75  | 0.958 | 0.849 | 0            |
-| bonus + hits+appear        | 0.75  | 1.0   | 0.861 | 0            |
+`scripts/benchmark/04_frecency.py` rebuilt so cold retrieval genuinely fails.
 
-Re-ask (12) and easy (12): **every config scores 1.0 / 1.0 / 1.0** — baseline is
-already at ceiling, so those sets give no discriminating signal. The ranking is
-decided entirely by the 24 adversarial queries.
+**Corpus:** 6 topic clusters × 3 **near-duplicate sibling documents** + 6
+distractors (24 docs). Within a cluster the three siblings share ~70 % of their
+wording and differ on one axis only — e.g. *anchorage length* as
+Eurocode 2 / ACI 318 / fib Model Code; *concrete cover* for
+chloride / carbonation / fire; *reduced-voltage motor start* by
+VFD / star-delta / autotransformer. Vector + FTS cannot reliably order the
+siblings.
 
-Calibration — median warm-up frecency score: **2.69** (hits_only), **2.99**
-(hits+appear).
+**Gold = one specific sibling per query** — the one a simulated work session
+searched for and `biblio hit` 3× (weight 5). Three query sets, 6 queries each
+(one per cluster):
 
-### Reading it
+| set | query is… | cold R@1 | cold MRR |
+|---|---|---|---|
+| **reask** | the exact phrase the session used | 0.33 | 0.56 |
+| **easy** | a plain-language paraphrase of the same need | 0.00 | 0.39 |
+| **cross** | phrased in a *neighbouring* sibling's vocabulary | 0.00 | 0.35 |
 
-- **`bonus` fusion wins.** Post-fusion additive bonus lifts adversarial R@3 to a
-  perfect 1.0 and MRR +0.019 over baseline, with **zero regressions**. It's the
-  only mode that moves R@3.
-- **`weighted` fusion does nothing** — byte-identical to `flat` in every cell on
-  this corpus. The dynamic RRF weight can't out-vote a dominant wrong document
-  any more than a flat vote could. Delete it.
-- **`hits_only` recording beats `hits+appear`** by a hair (MRR 0.856/0.868 vs
-  0.849/0.861). The weight-1 search-appearance records are mild noise, not
-  signal. Drop them.
-- **recall@1 is still flat everywhere.** Same finding as the MVP benchmark:
-  frecency denoises the 2–5 band and pushes distractors out of the top 5, but it
-  does not dislodge a confidently-wrong rank-1. That ceiling is structural, not a
-  tuning failure.
-- **Calibration is close to moot for `bonus` mode.** Observed scores (~2.7)
-  vastly exceed `BONUS_SCALE` (1.0), so `min(score / BONUS_SCALE, MAX_BONUS)`
-  saturates at `MAX_BONUS` (0.03 ≈ 2 RRF positions) for essentially every
-  warmed chunk. `MAX_BONUS` is the effective knob; `BONUS_SCALE` only matters for
-  nearly-decayed signals, where keeping the bonus small is the safe default.
-  Shipping `BONUS_SCALE = 1.0` — the value the winning run was measured with.
+Cold `no_frecency=True` is now a real reference point, not a ceiling. Runs are
+fully deterministic (no RNG; identical across repeats).
+
+### Full matrix (recall@1 / recall@3 / MRR; `regr` = queries ranked worse than cold)
+
+**reask (n=6)**
+
+| row | R@1 | R@3 | MRR | regr |
+|---|---|---|---|---|
+| COLD (no frecency)      | 0.33 | 1.0 | 0.56 | — |
+| flat + hits_only        | 1.00 | 1.0 | 1.00 | 0 |
+| weighted + hits_only    | 1.00 | 1.0 | 1.00 | 0 |
+| **bonus + hits_only**   | 1.00 | 1.0 | 1.00 | 0 |
+| flat + hits+appear      | 0.83 | 1.0 | 0.92 | 0 |
+| weighted + hits+appear  | 1.00 | 1.0 | 1.00 | 0 |
+| bonus + hits+appear     | 0.67 | 1.0 | 0.81 | 0 |
+
+**easy (n=6)**
+
+| row | R@1 | R@3 | MRR | regr |
+|---|---|---|---|---|
+| COLD (no frecency)      | 0.00 | 1.0 | 0.39 | — |
+| flat + hits_only        | 0.83 | 1.0 | 0.92 | 0 |
+| weighted + hits_only    | 0.83 | 1.0 | 0.92 | 0 |
+| **bonus + hits_only**   | 1.00 | 1.0 | 1.00 | 0 |
+| flat + hits+appear      | 0.83 | 1.0 | 0.89 | 0 |
+| weighted + hits+appear  | 1.00 | 1.0 | 1.00 | 0 |
+| bonus + hits+appear     | 0.50 | 1.0 | 0.69 | 0 |
+
+**cross (n=6)**
+
+| row | R@1 | R@3 | MRR | regr |
+|---|---|---|---|---|
+| COLD (no frecency)      | 0.00 | 0.67 | 0.35 | — |
+| flat + hits_only        | 0.83 | 1.0  | 0.92 | 0 |
+| weighted + hits_only    | 0.83 | 1.0  | 0.92 | 0 |
+| **bonus + hits_only**   | 0.83 | 1.0  | 0.92 | 0 |
+| flat + hits+appear      | 0.33 | 1.0  | 0.61 | 0 |
+| weighted + hits+appear  | 0.50 | 1.0  | 0.69 | 0 |
+| bonus + hits+appear     | 0.33 | 0.83 | 0.57 | 0 |
+
+**summary — avg MRR over the 3 sets**
+
+| row | avg MRR | Δ vs cold |
+|---|---|---|
+| COLD (no frecency)      | 0.433 | — |
+| flat + hits_only        | 0.945 | +0.512 |
+| weighted + hits_only    | 0.945 | +0.512 |
+| **bonus + hits_only**   | **0.972** | **+0.540** |
+| flat + hits+appear      | 0.806 | +0.373 |
+| weighted + hits+appear  | 0.898 | +0.465 |
+| bonus + hits+appear     | 0.690 | +0.257 |
+
+Calibration — median warm-up frecency score: **6.56** (hits_only), **6.68**
+(hits+appear); both ≫ `BONUS_SCALE` = 1.0, so `min(score/BONUS_SCALE, MAX_BONUS)`
+saturates at `MAX_BONUS` for every warmed sibling.
+
+### Reading it — and whether the §7 deletions were right
+
+- **Frecency is now a large, safe win.** +0.51–0.54 MRR over cold, cold R@1
+  0.0–0.33 → warm 0.83–1.0, **zero regressions** in any of the 18 config×set
+  cells. The MVP concern ("re-ask shows no movement") was a corpus artifact — on
+  a corpus where cold actually struggles, re-ask goes 0.56 → 1.00 MRR.
+
+- **Deleting `hits+appear` — confirmed, and it's not marginal.** On this corpus
+  the weight-1 "it appeared in a search" records are *actively harmful*:
+  `flat` drops 0.945 → 0.806, `bonus` drops 0.972 → **0.690**. During warm-up
+  every search writes its whole top-5 as weight-1 accesses, so the *wrong*
+  siblings accumulate frecency too; with near-identical siblings that pollution
+  swamps the weight-5 hit. `hits_only` keeps the signal clean.
+
+- **Deleting `weighted` — confirmed.** In the `hits_only` regime we actually
+  ship, `weighted` is byte-identical to `flat` again (0.945 = 0.945, every cell).
+  It only ever helped in the `hits+appear` regime (0.806 → 0.898) — i.e. it
+  partly *compensates* for the noise that `hits_only` removes at the source.
+  Once you drop `hits+appear`, `weighted` has nothing left to do.
+
+- **Shipping `bonus` — confirmed.** Best mode: ties `flat`/`weighted` on reask
+  and cross, and fixes one more query to rank-1 on easy (0.83 → 1.00), for the
+  top avg MRR (0.972) with zero regressions.
+
+- **recall@3 is near-ceiling cold** (1.0 on reask/easy, 0.67 on cross): the
+  siblings *are* all retrieved, they're just mis-ordered. Frecency's whole job
+  here is to reorder the retrieved siblings so the one you use lands at #1 —
+  which is exactly what the recall@1 column shows it doing.
 
 ### Decision
 
-Ship **`bonus` fusion + `hits_only` recording**. Task 7 deletes the `flat` and
-`weighted` code paths, removes the `fusion_mode` and `record_appearances`
-parameters, drops `BASE_WEIGHT` / `FRECENCY_SCALE`, and keeps `MAX_BONUS` /
-`BONUS_SCALE`. `save_last_query_vec` stays unconditional (minus `no_frecency`) —
-`biblio hit` depends on it.
+Ship **`bonus` fusion + `hits_only` recording**. Delete the `flat` and
+`weighted` fusion paths and the weight-1 appearance recording; remove the
+`fusion_mode` and `record_appearances` parameters; drop `BASE_WEIGHT` /
+`FRECENCY_SCALE`; keep `MAX_BONUS` / `BONUS_SCALE`. `save_last_query_vec` stays
+unconditional (minus `no_frecency`) — `biblio hit` depends on it.
+
+Once the params are gone the committed benchmark can no longer sweep the matrix
+against production; it keeps a frozen local copy of the three fusion formulas so
+"was the deletion right" stays re-runnable.
 
 ### Caveats
 
-- The margin is thin: +0.019 MRR is ~1 query's worth of rank movement across 24.
-  Direction is trustworthy, magnitude is not.
-- `weighted` being inert may be a corpus artifact (small, high-contrast). Deleting
-  it is still correct — a mode that never wins is dead weight, and the benchmark
-  is committed so it can be revisited.
-- Synthetic corpus, same limitations as §6.
+- 6 queries per set. Deltas are large (cold 0.35–0.56 → warm 0.92–1.0) so the
+  direction is not in doubt, but exact MRR values shouldn't be over-read.
+- Synthetic near-duplicate siblings are an idealised version of the real case
+  (same topic across editions / standards / vendors in one library). Real
+  corpora are messier and the cold baseline would usually be a little better.

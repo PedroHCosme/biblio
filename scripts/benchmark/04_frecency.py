@@ -1,8 +1,24 @@
 #!/usr/bin/env python3
 """Frecency ranking benchmark — 6-config matrix comparison.
 
-Builds a synthetic bibliotheca with confusable topic pairs, warms up
-frecency state, then evaluates three fusion modes × two recording modes.
+The corpus is built for HEADROOM: 6 topic clusters of 3 near-duplicate sibling
+documents each. The siblings share ~70% of their vocabulary and differ on one
+axis (which standard / which method / which context). Vector + FTS alone cannot
+reliably tell the siblings apart, so cold retrieval ranks them close to
+arbitrarily — often putting the wrong sibling first. The "gold" answer for every
+query is one *specific* sibling: the one a simulated work session repeatedly hit.
+Frecency's job is to resurface that sibling.
+
+Three query sets, all with real cold headroom:
+  reask  — the exact phrase the session used
+  easy   — a natural-language paraphrase of the same need
+  cross  — phrased with a neighbouring sibling's / cluster's vocabulary
+
+Warm-up per config: for each cluster the session runs its `reask` query and
+`biblio hit`s the gold sibling 3x (weight 5). Bibliotheca reset between configs.
+
+Matrix: 3 fusion modes (flat / weighted / bonus) x 2 recording modes
+(hits_only / hits+appearances). Baseline = flat + hits+appearances.
 """
 import os
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
@@ -15,214 +31,299 @@ except Exception:
     pass
 
 import sys
-from math import exp
 from pathlib import Path
 
 import numpy as np
 
-# Ensure the project root is on sys.path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from biblio import db, embed
 from biblio.search import search
 
-# ---------- corpus ----------
+# ---------- corpus: 6 clusters x 3 near-duplicate siblings ----------
+#
+# Each value is (filename, body). The body is deliberately repetitive and
+# heavy on the shared cluster vocabulary; exactly one sentence distinguishes
+# the sibling. `_x3` at build time pads it to a chunkable length.
 
-CORPUS = {
-    "anchorage": (
-        "01-anchorage.md",
-        "# Anchorage length\n"
-        "The basic anchorage length depends on the bond stress between rebar and "
-        "concrete. Passive reinforcement bars require a minimum anchorage to develop "
-        "the full yield strength. The calculation follows clause 9.4 of the concrete "
-        "design standard. Hooked bars reduce the required length. " * 4,
-    ),
-    "lap_splice": (
-        "02-lap-splice.md",
-        "# Lap splice\n"
-        "The lap splice length for reinforcement bars in tension depends on the bar "
-        "diameter and concrete strength. Overlapping bars transfer force through bond "
-        "stress. The design standard specifies minimum lap lengths for each bar size. "
-        "Bundled bars require increased splice length. " * 4,
-    ),
-    "nominal_cover": (
-        "03-nominal-cover.md",
-        "# Nominal cover\n"
-        "The nominal concrete cover to reinforcement depends on the environmental "
-        "exposure class. Cover protects the rebar from corrosion. Higher exposure "
-        "classes require thicker cover. The cover is measured from the surface to the "
-        "nearest bar. Minimum values are given in Table 7.2. " * 4,
-    ),
-    "durability": (
-        "04-durability.md",
-        "# Durability requirements\n"
-        "Durability of concrete structures is governed by exposure class and minimum "
-        "cover. Chloride ingress and carbonation are the primary degradation "
-        "mechanisms. Water-cement ratio limits and cover requirements work together. "
-        "Structures in marine environments need special attention. " * 4,
-    ),
-    "vfd_soft_start": (
-        "05-vfd.md",
-        "# VFD soft start\n"
-        "A variable frequency drive controls motor speed by varying the supply "
-        "frequency. The acceleration ramp reduces inrush current during starting. "
-        "The VFD parameters include ramp time, V/f curve, and overload protection. "
-        "Three-phase induction motors benefit most from soft starting. " * 4,
-    ),
-    "direct_on_line": (
-        "06-dol.md",
-        "# Direct on-line starting\n"
-        "Direct on-line starting connects the motor directly to the supply voltage. "
-        "The starting current is 6-8 times the rated current. This method is simple "
-        "but causes voltage drops and mechanical stress. Star-delta starters reduce "
-        "the inrush current to about one-third. " * 4,
-    ),
-    "shear_links": (
-        "07-shear-links.md",
-        "# Shear reinforcement\n"
-        "Shear links (stirrups) resist diagonal tension in concrete beams. The "
-        "spacing depends on the shear force and beam depth. Minimum shear "
-        "reinforcement is required even where shear stress is low. Inclined bars "
-        "may supplement vertical links. " * 4,
-    ),
-    "torsion_links": (
-        "08-torsion-links.md",
-        "# Torsion reinforcement\n"
-        "Torsion links form a closed loop around the beam section. The torsional "
-        "resistance depends on the enclosed area and the link spacing. Combined "
-        "shear and torsion requires superposition of the link areas. Compatibility "
-        "torsion may be redistributed. " * 4,
-    ),
-    "creep": (
-        "09-creep.md",
-        "# Creep of concrete\n"
-        "Creep is the time-dependent strain under sustained load. The creep "
-        "coefficient depends on loading age, relative humidity, and member size. "
-        "Long-term deflections increase by a factor of 2-3 due to creep. Prestressed "
-        "members lose force due to creep shortening. " * 4,
-    ),
-    "shrinkage": (
-        "10-shrinkage.md",
-        "# Shrinkage of concrete\n"
-        "Drying shrinkage causes volume reduction as moisture evaporates. Autogenous "
-        "shrinkage occurs in low water-cement ratio mixes. Restraint of shrinkage "
-        "causes cracking. Shrinkage strain depends on humidity, member thickness, "
-        "and cement content. " * 4,
-    ),
-    "weld_fatigue": (
-        "11-weld-fatigue.md",
-        "# Weld fatigue\n"
-        "Fatigue life of welded joints depends on the stress range and detail "
-        "category. The S-N curve relates stress range to number of cycles. Weld "
-        "toe geometry concentrates stress. Post-weld treatment improves fatigue "
-        "life by reducing residual stress. " * 4,
-    ),
-    "bolt_fatigue": (
-        "12-bolt-fatigue.md",
-        "# Bolt fatigue\n"
-        "High-strength bolts under cyclic loading may fail by fatigue. The fatigue "
-        "strength depends on the preload level and stress range. Properly "
-        "preloaded bolts in friction connections resist fatigue better than bearing "
-        "type. Thread root is the critical location. " * 4,
-    ),
+def _x3(intro: str, shared: str) -> str:
+    return intro + "\n" + (shared + " ") * 3
+
+
+CLUSTERS: dict[str, dict[str, str]] = {
+    # -- 1. anchorage / development length of a reinforcing bar --
+    "anchorage": {
+        "anchorage_ec2": _x3(
+            "# Anchorage length (Eurocode 2)",
+            "The anchorage length lets a reinforcing bar develop its full yield "
+            "force through bond stress between the bar and the surrounding "
+            "concrete. Cover, transverse links and transverse pressure confine "
+            "the bar and raise the attainable bond stress, shortening the length. "
+            "Hooks and bends reduce a straight anchorage. This clause follows "
+            "Eurocode 2: the design anchorage length lbd is the basic required "
+            "length lb,rqd scaled by the alpha coefficients."),
+        "anchorage_aci": _x3(
+            "# Development length (ACI 318)",
+            "The development length lets a reinforcing bar develop its full yield "
+            "force through bond stress between the bar and the surrounding "
+            "concrete. Cover, transverse reinforcement and transverse pressure "
+            "confine the bar and raise the attainable bond stress, shortening the "
+            "length. Hooks and headed bars reduce a straight embedment. This "
+            "clause follows ACI 318: the tension development length ld is a "
+            "function of bar diameter, yield strength and the confinement term."),
+        "anchorage_fib": _x3(
+            "# Anchorage from first principles (fib Model Code)",
+            "The anchorage length lets a reinforcing bar develop its full yield "
+            "force through bond stress between the bar and the surrounding "
+            "concrete. Cover, transverse links and transverse pressure confine "
+            "the bar and raise the attainable bond stress, shortening the length. "
+            "Hooks and bends reduce a straight anchorage. From first principles "
+            "the average bond stress integrated over the embedded bar surface "
+            "must equal the bar force, as set out in the fib Model Code."),
+    },
+    # -- 2. splicing / joining two reinforcing bars in tension --
+    "splice": {
+        "splice_lap": _x3(
+            "# Lap splice",
+            "A splice joins two reinforcing bars so tension passes from one to "
+            "the other. The transfer length depends on bar diameter, concrete "
+            "strength, cover and the amount of transverse reinforcement across "
+            "the joint. Staggering splices along the member reduces the peak "
+            "demand at any section. In a lap splice the two bars simply overlap "
+            "and the force crosses the gap through bond to the concrete."),
+        "splice_sleeve": _x3(
+            "# Grouted sleeve splice",
+            "A splice joins two reinforcing bars so tension passes from one to "
+            "the other. The transfer length depends on bar diameter, grout "
+            "strength, confinement and the embedment of each bar in the sleeve. "
+            "Staggering splices along the member reduces the peak demand at any "
+            "section. In a grouted sleeve splice each bar is embedded in a "
+            "filled steel sleeve and the force crosses through bond to the grout."),
+        "splice_weld": _x3(
+            "# Welded splice",
+            "A splice joins two reinforcing bars so tension passes from one to "
+            "the other. The capacity depends on the weld process, the bar "
+            "weldability and the joint preparation rather than on bond length. "
+            "Staggering splices along the member reduces the peak demand at any "
+            "section. In a welded splice the bars are joined directly by a "
+            "full-strength butt weld and no bond transfer length is needed."),
+    },
+    # -- 3. concrete cover over the reinforcement --
+    "cover": {
+        "cover_chloride": _x3(
+            "# Cover for chloride exposure",
+            "The nominal concrete cover is the distance from the concrete "
+            "surface to the nearest reinforcing bar. It protects the steel and "
+            "is set by the exposure condition, the intended service life and the "
+            "concrete quality. Thicker cover and lower water-cement ratio both "
+            "help. For chloride exposure near seawater or de-icing salts the "
+            "cover is increased to slow chloride ingress to the bar."),
+        "cover_carbonation": _x3(
+            "# Cover for carbonation",
+            "The nominal concrete cover is the distance from the concrete "
+            "surface to the nearest reinforcing bar. It protects the steel and "
+            "is set by the exposure condition, the intended service life and the "
+            "concrete quality. Thicker cover and lower water-cement ratio both "
+            "help. For carbonation exposure in humid air the cover is set so the "
+            "carbonation front does not reach the bar within the design life."),
+        "cover_fire": _x3(
+            "# Cover for fire resistance",
+            "The nominal concrete cover is the distance from the concrete "
+            "surface to the nearest reinforcing bar. It protects the steel and "
+            "is set by the exposure condition, the intended service life and the "
+            "concrete quality. Thicker cover and lower water-cement ratio both "
+            "help. For fire resistance the axis distance to the bar is set so the "
+            "steel stays below its critical temperature for the required period."),
+    },
+    # -- 4. controlling crack width in concrete --
+    "crackwidth": {
+        "crack_flexural": _x3(
+            "# Flexural crack width",
+            "Crack width in a concrete member is controlled by limiting the bar "
+            "stress and the bar spacing so the tension steel restrains the "
+            "cracks to an acceptable opening. Smaller bars at closer spacing "
+            "give finer cracks for the same steel area. Here the cracking is "
+            "caused by flexural tension under the applied bending moment in "
+            "service."),
+        "crack_shrinkage": _x3(
+            "# Shrinkage restraint cracking",
+            "Crack width in a concrete member is controlled by limiting the bar "
+            "stress and the bar spacing so the tension steel restrains the "
+            "cracks to an acceptable opening. Smaller bars at closer spacing "
+            "give finer cracks for the same steel area. Here the cracking is "
+            "caused by drying shrinkage of the concrete restrained by the "
+            "supports or by older adjacent pours."),
+        "crack_thermal": _x3(
+            "# Early-age thermal cracking",
+            "Crack width in a concrete member is controlled by limiting the bar "
+            "stress and the bar spacing so the tension steel restrains the "
+            "cracks to an acceptable opening. Smaller bars at closer spacing "
+            "give finer cracks for the same steel area. Here the cracking is "
+            "caused by early-age heat of hydration: the core expands, the "
+            "surface is restrained, and it cracks on cooling."),
+    },
+    # -- 5. reduced-voltage starting of an induction motor --
+    "motorstart": {
+        "start_vfd": _x3(
+            "# Starting with a variable frequency drive",
+            "Reduced-voltage starting limits the large inrush current an "
+            "induction motor draws when connected straight to the line. It eases "
+            "the voltage dip on the supply and the mechanical shock on the "
+            "driven load, at the cost of reduced starting torque. A variable "
+            "frequency drive ramps frequency and voltage together from zero, "
+            "giving the lowest inrush and smooth controlled acceleration."),
+        "start_stardelta": _x3(
+            "# Star-delta starting",
+            "Reduced-voltage starting limits the large inrush current an "
+            "induction motor draws when connected straight to the line. It eases "
+            "the voltage dip on the supply and the mechanical shock on the "
+            "driven load, at the cost of reduced starting torque. A star-delta "
+            "starter runs the windings in star for starting, cutting current and "
+            "torque to a third, then switches to delta for running."),
+        "start_autotx": _x3(
+            "# Autotransformer starting",
+            "Reduced-voltage starting limits the large inrush current an "
+            "induction motor draws when connected straight to the line. It eases "
+            "the voltage dip on the supply and the mechanical shock on the "
+            "driven load, at the cost of reduced starting torque. An "
+            "autotransformer starter applies a chosen tap voltage during "
+            "starting, then transitions the motor to full line voltage."),
+    },
+    # -- 6. fatigue under cyclic load --
+    "fatigue": {
+        "fatigue_weld": _x3(
+            "# Fatigue of welded details",
+            "Fatigue life under repeated load depends on the stress range and "
+            "the number of cycles, related by an S-N curve for the detail. "
+            "Stress concentrations cut the life; residual stress and mean stress "
+            "shift it. The critical location for a welded detail is the weld toe, "
+            "and grinding or peening the toe improves the life."),
+        "fatigue_bolt": _x3(
+            "# Fatigue of bolted connections",
+            "Fatigue life under repeated load depends on the stress range and "
+            "the number of cycles, related by an S-N curve for the detail. "
+            "Stress concentrations cut the life; residual stress and mean stress "
+            "shift it. The critical location for a high-strength bolt is the "
+            "thread root, and adequate preload keeps the stress range on the "
+            "bolt small."),
+        "fatigue_rebar": _x3(
+            "# Fatigue of reinforcing bars",
+            "Fatigue life under repeated load depends on the stress range and "
+            "the number of cycles, related by an S-N curve for the detail. "
+            "Stress concentrations cut the life; residual stress and mean stress "
+            "shift it. The critical location for a reinforcing bar is the base "
+            "of a rib or a bend, and bars are rarely spliced in high-cycle "
+            "tension zones."),
+    },
 }
 
-# 8 unrelated distractors
+# 6 unrelated distractors
 DISTRACTORS = {
-    f"distractor_{i}": (
-        f"{i:02d}-filler.md",
-        f"# Topic {i}\n"
-        f"This document covers unrelated topic number {i}. It contains general "
-        f"engineering text that should not match any of the target queries. "
-        f"The content is deliberately generic to serve as a distractor. " * 4,
-    )
-    for i in range(1, 9)
+    "d_geodesy": (
+        "13-geodesy.md",
+        "# Traverse adjustment\n"
+        "A closed traverse is adjusted by distributing the angular misclosure "
+        "equally among the stations, then balancing the departures and "
+        "latitudes by the compass rule before computing coordinates. " * 4),
+    "d_hvac": (
+        "14-hvac.md",
+        "# Duct sizing\n"
+        "Supply ducts are sized by the equal-friction method: pick a friction "
+        "rate per unit length and read the duct diameter for each branch flow "
+        "from the chart, then check the resulting air velocity. " * 4),
+    "d_lighting": (
+        "15-lighting.md",
+        "# Interior lighting\n"
+        "The lumen method gives the number of luminaires for a target "
+        "illuminance from the room index, the utilisation factor and the "
+        "maintenance factor for the space. " * 4),
+    "d_drainage": (
+        "16-drainage.md",
+        "# Road gullies\n"
+        "Gully spacing on a carriageway follows from the rational-method runoff, "
+        "the allowable spread of water in the channel and the intercept "
+        "efficiency of the grating at the design flow. " * 4),
+    "d_formwork": (
+        "17-formwork.md",
+        "# Wall formwork pressure\n"
+        "The lateral concrete pressure on wall formwork depends on the pour "
+        "rate, the concrete temperature and the set retardation; above a "
+        "critical height the pressure is hydrostatic. " * 4),
+    "d_coating": (
+        "18-coating.md",
+        "# Protective coatings\n"
+        "A paint system for structural steel is specified by surface "
+        "preparation grade, primer type and total dry film thickness for the "
+        "corrosivity category and the required durability. " * 4),
 }
 
-# Gold document for each topic (what the correct answer is)
-GOLD = {
-    "anchorage": "anchorage",
-    "lap_splice": "lap_splice",
-    "nominal_cover": "nominal_cover",
-    "durability": "durability",
-    "vfd_soft_start": "vfd_soft_start",
-    "direct_on_line": "direct_on_line",
-    "shear_links": "shear_links",
-    "torsion_links": "torsion_links",
-    "creep": "creep",
-    "shrinkage": "shrinkage",
-    "weld_fatigue": "weld_fatigue",
-    "bolt_fatigue": "bolt_fatigue",
-}
-
-# Adversarial queries — worded in the sibling's vocabulary
-ADVERSARIAL = [
-    ("bond stress overlap bars tension", "anchorage"),
-    ("minimum length to develop yield in rebar", "anchorage"),
-    ("bar diameter concrete strength overlap", "lap_splice"),
-    ("transfer force through bond between reinforcement", "lap_splice"),
-    ("distance from surface to bar for the exposure class", "nominal_cover"),
-    ("protection rebar corrosion table values", "nominal_cover"),
-    ("chloride carbonation cover requirements", "durability"),
-    ("exposure class minimum protection concrete", "durability"),
-    ("motor speed ramp acceleration frequency", "vfd_soft_start"),
-    ("reduce inrush current three phase starting", "vfd_soft_start"),
-    ("supply voltage starting current six times rated", "direct_on_line"),
-    ("star delta voltage drop mechanical stress", "direct_on_line"),
-    ("diagonal tension stirrups spacing beam", "shear_links"),
-    ("minimum reinforcement inclined bars vertical", "shear_links"),
-    ("closed loop section torsional resistance", "torsion_links"),
-    ("combined shear superposition link areas", "torsion_links"),
-    ("time dependent strain sustained load coefficient", "creep"),
-    ("long-term deflection prestressed shortening", "creep"),
-    ("volume reduction moisture evaporation drying", "shrinkage"),
-    ("restraint cracking cement content humidity", "shrinkage"),
-    ("stress range S-N curve detail category", "weld_fatigue"),
-    ("post treatment residual stress toe geometry", "weld_fatigue"),
-    ("preload level stress range friction connection", "bolt_fatigue"),
-    ("thread root cyclic loading high strength", "bolt_fatigue"),
+# One simulated session per cluster: (reask query, gold sibling doc-folder name).
+# The session runs this query and hits the gold sibling 3x.
+SESSION = [
+    ("anchorage length develop bar yield through bond stress", "anchorage_ec2"),
+    ("splice transfer tension between two reinforcing bars",     "splice_sleeve"),
+    ("nominal concrete cover to protect the reinforcement",      "cover_carbonation"),
+    ("limit crack width by bar stress and bar spacing",          "crack_thermal"),
+    ("reduced voltage starting to limit motor inrush current",   "start_stardelta"),
+    ("fatigue life from stress range and S-N curve",             "fatigue_bolt"),
 ]
 
-# Re-ask queries — the exact phrases used during warm-up
-REASK = [
-    ("anchorage length bond stress rebar", "anchorage"),
-    ("lap splice reinforcement tension", "lap_splice"),
-    ("nominal cover exposure class corrosion", "nominal_cover"),
-    ("durability chloride carbonation", "durability"),
-    ("VFD soft start acceleration ramp", "vfd_soft_start"),
-    ("direct on-line starting inrush current", "direct_on_line"),
-    ("shear links stirrups diagonal tension", "shear_links"),
-    ("torsion links closed loop reinforcement", "torsion_links"),
-    ("creep time-dependent strain", "creep"),
-    ("shrinkage drying autogenous", "shrinkage"),
-    ("weld fatigue stress range S-N", "weld_fatigue"),
-    ("bolt fatigue preload cyclic", "bolt_fatigue"),
-]
+# reask == the session queries, verbatim.
+REASK = list(SESSION)
 
-# Easy queries — clean paraphrases
+# easy: natural-language paraphrase of the same need; same gold sibling.
 EASY = [
-    ("what is the anchorage length for passive reinforcement", "anchorage"),
-    ("how to calculate lap splice length", "lap_splice"),
-    ("what is the nominal cover for reinforcement", "nominal_cover"),
-    ("durability requirements for concrete structures", "durability"),
-    ("how does a VFD soft start work", "vfd_soft_start"),
-    ("what is direct on-line motor starting", "direct_on_line"),
-    ("design of shear links in concrete beams", "shear_links"),
-    ("torsion reinforcement design requirements", "torsion_links"),
-    ("what is creep of concrete", "creep"),
-    ("what causes shrinkage in concrete", "shrinkage"),
-    ("fatigue life of welded joints", "weld_fatigue"),
-    ("bolt fatigue under cyclic loading", "bolt_fatigue"),
+    ("how far must a rebar be embedded so it reaches its yield strength",
+     "anchorage_ec2"),
+    ("how do you join two reinforcement bars so they carry tension across the joint",
+     "splice_sleeve"),
+    ("how much concrete cover do you need over the steel to protect it",
+     "cover_carbonation"),
+    ("how are cracks in a concrete member kept narrow",
+     "crack_thermal"),
+    ("how do you start a big induction motor without a huge current spike",
+     "start_stardelta"),
+    ("how is the fatigue life of a detail estimated from cyclic stress",
+     "fatigue_bolt"),
+]
+
+# cross: worded with a neighbouring sibling's / cluster's vocabulary. The gold
+# sibling still answers the need, but cold retrieval is pulled toward a sibling
+# (or a distractor). Frecency has to override the lexical pull.
+CROSS = [
+    ("development length of a deformed bar in tension per code",  # ACI wording
+     "anchorage_ec2"),
+    ("overlap length for lapped bars to pass force through bond", # lap wording
+     "splice_sleeve"),
+    ("axis distance to the bar for fire resistance period",       # fire wording
+     "cover_carbonation"),
+    ("controlling cracks from drying shrinkage restrained by supports",  # shrinkage wording
+     "crack_thermal"),
+    ("ramp frequency and voltage from zero for a smooth motor start",    # VFD wording
+     "start_stardelta"),
+    ("weld toe stress concentration and grinding to improve life",       # weld wording
+     "fatigue_bolt"),
 ]
 
 
 # ---------- helpers ----------
 
 def build_bibliotheca(root: Path) -> Path:
-    """Build a fresh bibliotheca with all corpus docs."""
-    all_docs = {**CORPUS, **DISTRACTORS}
+    """Build a fresh bibliotheca with all cluster siblings + distractors."""
     con = db.connect(root)
-    for doc_name, (filename, body) in all_docs.items():
+    n = 1
+    for cluster, siblings in CLUSTERS.items():
+        for doc_name, body in siblings.items():
+            folder = root / doc_name
+            folder.mkdir(exist_ok=True)
+            (folder / f"{n:02d}-{doc_name}.md").write_text(
+                f"---\ndoc: {doc_name}\nsection: main\n---\n\n{body}\n",
+                encoding="utf-8")
+            n += 1
+            chunks = embed.doc_chunks(folder)
+            db.replace_document(con, doc_name, chunks,
+                                embed.vectorize([c["text"] for c in chunks]))
+    for doc_name, (filename, body) in DISTRACTORS.items():
         folder = root / doc_name
         folder.mkdir(exist_ok=True)
         (folder / filename).write_text(
@@ -236,38 +337,32 @@ def build_bibliotheca(root: Path) -> Path:
 
 
 def warm_up(bib: Path, record_appearances: bool) -> None:
-    """Simulate a working session: search + hit on each gold topic."""
-    for query, gold_topic in REASK:
-        search(query, output=bib, top=5,
-               record_appearances=record_appearances)
+    """Simulate a working session: for each cluster, search + hit the gold sibling 3x."""
+    for query, gold_doc in SESSION:
+        search(query, output=bib, top=5, record_appearances=record_appearances)
         con = db.connect(bib)
         try:
             row = con.execute(
-                "SELECT id FROM chunks WHERE doc = ? LIMIT 1",
-                (gold_topic,)).fetchone()
+                "SELECT id FROM chunks WHERE doc = ? LIMIT 1", (gold_doc,)).fetchone()
             if row:
                 vec_f16 = np.asarray(
                     embed.vectorize_query(query), dtype="float16").tobytes()
                 for _ in range(3):
                     session = db.increment_session(con)
-                    db.record_access(con, row["id"], vec_f16,
-                                     weight=5, session_id=session)
+                    db.record_access(con, row["id"], vec_f16, weight=5,
+                                     session_id=session)
         finally:
             con.close()
 
 
 def report_calibration(bib: Path) -> None:
-    """Median top frecency score across gold chunks — feeds the Task 6 SCALE calibration.
-
-    For each REASK query, re-embed it and ask db.ranked_by_frecency for the gold
-    doc's own chunks; take the top score per gold chunk, print the median.
-    """
+    """Median top frecency score across the gold siblings (feeds SCALE tuning)."""
     con = db.connect(bib)
     scores: list[float] = []
     try:
-        for query, gold_topic in REASK:
-            vec = embed.vectorize_query(query)
-            ranked = db.ranked_by_frecency(con, vec, 20, doc=gold_topic)
+        for query, gold_doc in SESSION:
+            ranked = db.ranked_by_frecency(
+                con, embed.vectorize_query(query), 20, doc=gold_doc)
             if ranked:
                 scores.append(ranked[0][1])
     finally:
@@ -278,133 +373,131 @@ def report_calibration(bib: Path) -> None:
         print("  median warm-up frecency score: n/a (no frecency state)")
 
 
-def evaluate(bib: Path, queries: list[tuple[str, str]],
-             fusion_mode: str, top: int = 5
-             ) -> dict:
-    """Run queries and compute metrics."""
+def evaluate(bib: Path, queries: list[tuple[str, str]], fusion_mode: str | None,
+             top: int = 5) -> dict:
+    """Run queries; return recall@1/@3, MRR and the per-query gold rank list.
+
+    fusion_mode=None means cold: no_frecency=True.
+    """
     ranks = []
-    for query, gold_topic in queries:
-        results = search(query, output=bib, top=top,
-                         fusion_mode=fusion_mode, no_frecency=False,
-                         record_appearances=False)
-        rank = None
-        for i, r in enumerate(results, 1):
-            if r["doc"] == gold_topic:
-                rank = i
-                break
+    for query, gold_doc in queries:
+        if fusion_mode is None:
+            results = search(query, output=bib, top=top, no_frecency=True)
+        else:
+            results = search(query, output=bib, top=top, fusion_mode=fusion_mode,
+                             no_frecency=False, record_appearances=False)
+        rank = next((i for i, r in enumerate(results, 1)
+                     if r["doc"] == gold_doc), None)
         ranks.append(rank)
 
     n = len(queries)
-    recall_1 = sum(1 for r in ranks if r == 1) / n
-    recall_3 = sum(1 for r in ranks if r is not None and r <= 3) / n
-    mrr = sum(1 / r for r in ranks if r is not None) / n
-    return {"recall@1": round(recall_1, 3),
-            "recall@3": round(recall_3, 3),
-            "MRR": round(mrr, 3),
-            "ranks": ranks}
+    return {
+        "recall@1": round(sum(1 for r in ranks if r == 1) / n, 3),
+        "recall@3": round(sum(1 for r in ranks if r and r <= 3) / n, 3),
+        "MRR": round(sum(1 / r for r in ranks if r) / n, 3),
+        "ranks": ranks,
+    }
 
 
-def count_regressions(baseline_ranks: list, candidate_ranks: list) -> int:
-    """Count queries where candidate is worse than baseline."""
-    count = 0
-    for b, c in zip(baseline_ranks, candidate_ranks):
-        if b is not None and (c is None or c > b):
-            count += 1
-    return count
+def count_regressions(base_ranks: list, cand_ranks: list) -> int:
+    """Queries where candidate ranks the gold worse than the baseline did."""
+    return sum(1 for b, c in zip(base_ranks, cand_ranks)
+               if b is not None and (c is None or c > b))
 
 
 # ---------- main ----------
 
+QSETS = [("reask", REASK), ("easy", EASY), ("cross", CROSS)]
+
 CONFIGS = [
-    ("flat + hits_only",      "flat",     False),
-    ("weighted + hits_only",  "weighted", False),
-    ("bonus + hits_only",     "bonus",    False),
-    ("flat + hits+appear",    "flat",     True),
-    ("weighted + hits+appear","weighted", True),
-    ("bonus + hits+appear",   "bonus",    True),
+    ("flat + hits_only",       "flat",     False),
+    ("weighted + hits_only",   "weighted", False),
+    ("bonus + hits_only",      "bonus",    False),
+    ("flat + hits+appear",     "flat",     True),
+    ("weighted + hits+appear", "weighted", True),
+    ("bonus + hits+appear",    "bonus",    True),
 ]
+BASELINE = "flat + hits+appear"
 
 
 def main():
     import shutil
     import tempfile
 
-    print("Building corpus and embedding (one-time cost)...")
     base_dir = Path(tempfile.mkdtemp(prefix="frecency_bench_"))
     corpus_dir = base_dir / "corpus"
     corpus_dir.mkdir()
+    print("Building corpus and embedding (one-time cost)...")
     build_bibliotheca(corpus_dir)
-    print(f"Corpus built at {corpus_dir}")
+    print(f"Corpus: {sum(len(s) for s in CLUSTERS.values())} cluster siblings "
+          f"+ {len(DISTRACTORS)} distractors at {corpus_dir}")
 
-    all_results = {}
+    # Cold reference — no frecency at all. One warm-free copy.
+    cold_dir = base_dir / "cold"
+    shutil.copytree(corpus_dir, cold_dir)
+    cold = {name: evaluate(cold_dir, qs, None) for name, qs in QSETS}
 
+    results = {}
     for config_name, fusion_mode, record_app in CONFIGS:
-        print(f"\n{'='*60}")
-        print(f"Config: {config_name}")
-        print(f"{'='*60}")
-
-        # Fresh copy of the bibliotheca for each config
+        print(f"\n{'='*60}\nConfig: {config_name}\n{'='*60}")
         run_dir = base_dir / config_name.replace(" ", "_").replace("+", "_")
         shutil.copytree(corpus_dir, run_dir)
-
-        # Warm up
         print("  Warming up...")
         warm_up(run_dir, record_appearances=record_app)
         report_calibration(run_dir)
-
-        # Evaluate
-        results = {}
-        for name, queries in [("adversarial", ADVERSARIAL),
-                              ("reask", REASK), ("easy", EASY)]:
+        results[config_name] = {}
+        for name, qs in QSETS:
             print(f"  Evaluating {name}...")
-            results[name] = evaluate(run_dir, queries, fusion_mode)
+            results[config_name][name] = evaluate(run_dir, qs, fusion_mode)
 
-        all_results[config_name] = results
+    # ---------- report ----------
+    print(f"\n\n{'='*60}\nRESULTS\n{'='*60}")
+    hdr = f"| {'row':<26} | {'R@1':>5} | {'R@3':>5} | {'MRR':>5} | {'regr':>4} |"
+    sep = f"|{'-'*28}|{'-'*7}|{'-'*7}|{'-'*7}|{'-'*6}|"
 
-    # Report
-    print(f"\n\n{'='*60}")
-    print("RESULTS")
-    print(f"{'='*60}\n")
-
-    baseline_name = "flat + hits+appear"
-    baseline = all_results[baseline_name]
-
-    header = f"| {'config':<28} | {'R@1':>5} | {'R@3':>5} | {'MRR':>5} | {'regr':>4} |"
-    separator = f"|{'-'*30}|{'-'*7}|{'-'*7}|{'-'*7}|{'-'*6}|"
-
-    for qset in ["adversarial", "reask", "easy"]:
-        print(f"\n### {qset} queries\n")
-        print(header)
-        print(separator)
+    for qset, qlist in QSETS:
+        print(f"\n### {qset} queries (n={len(qlist)})\n")
+        print(hdr)
+        print(sep)
+        c = cold[qset]
+        print(f"| {'COLD (no frecency)':<26} | {c['recall@1']:>5} | "
+              f"{c['recall@3']:>5} | {c['MRR']:>5} | {'—':>4} |")
         for config_name, _, _ in CONFIGS:
-            r = all_results[config_name][qset]
-            if config_name == baseline_name:
-                regr = "(base)"
-            else:
-                regr = str(count_regressions(
-                    baseline[qset]["ranks"], r["ranks"]))
-            print(f"| {config_name:<28} | {r['recall@1']:>5} | "
+            r = results[config_name][qset]
+            regr = count_regressions(cold[qset]["ranks"], r["ranks"])
+            print(f"| {config_name:<26} | {r['recall@1']:>5} | "
                   f"{r['recall@3']:>5} | {r['MRR']:>5} | {regr:>4} |")
 
-    # Pick winner: highest average MRR across all sets, zero regressions preferred
-    best_name = None
-    best_avg_mrr = -1
+    # deltas vs cold and vs baseline, averaged over the 3 sets
+    def avg_mrr(res):  # res: {qset: metrics}
+        return sum(res[q]["MRR"] for q, _ in QSETS) / len(QSETS)
+
+    def total_regr_vs_cold(res):
+        return sum(count_regressions(cold[q]["ranks"], res[q]["ranks"])
+                   for q, _ in QSETS)
+
+    print(f"\n### summary (avg MRR over the 3 sets)\n")
+    print(f"| {'row':<26} | {'avgMRR':>6} | {'ΔvsCold':>8} | {'regr vs cold':>12} |")
+    print(f"|{'-'*28}|{'-'*8}|{'-'*10}|{'-'*14}|")
+    cold_avg = avg_mrr(cold)
+    print(f"| {'COLD (no frecency)':<26} | {cold_avg:>6.3f} | {'—':>8} | {'—':>12} |")
+    ranking = []
     for config_name, _, _ in CONFIGS:
-        r = all_results[config_name]
-        avg_mrr = sum(r[q]["MRR"] for q in ["adversarial", "reask", "easy"]) / 3
-        total_regr = sum(
-            count_regressions(baseline[q]["ranks"], r[q]["ranks"])
-            for q in ["adversarial", "reask", "easy"]
-        ) if config_name != baseline_name else 0
-        if avg_mrr > best_avg_mrr or (avg_mrr == best_avg_mrr and total_regr == 0):
-            best_avg_mrr = avg_mrr
-            best_name = config_name
+        res = results[config_name]
+        a = avg_mrr(res)
+        ranking.append((config_name, a, total_regr_vs_cold(res)))
+        print(f"| {config_name:<26} | {a:>6.3f} | {a - cold_avg:>+8.3f} | "
+              f"{total_regr_vs_cold(res):>12} |")
 
-    print(f"\nWinner: {best_name} (avg MRR: {best_avg_mrr:.3f})")
+    ranking.sort(key=lambda x: (-x[1], x[2]))
+    win, win_mrr, win_regr = ranking[0]
+    print(f"\nWinner: {win}  (avg MRR {win_mrr:.3f}, "
+          f"{win_regr} regressions vs cold, +{win_mrr - cold_avg:.3f} over cold)")
+    if win_mrr - cold_avg < 0.02:
+        print("NOTE: winner is within 0.02 MRR of cold — frecency is not "
+              "pulling its weight even on this harder corpus.")
 
-    # Cleanup
     print(f"\nBenchmark data at: {base_dir}")
-    print("Delete manually when done: shutil.rmtree(path)")
 
 
 if __name__ == "__main__":
