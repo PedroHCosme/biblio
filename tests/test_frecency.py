@@ -170,12 +170,30 @@ def test_ranked_by_frecency_returns_scored_chunks(con):
         db.record_access(con, cid1, vec_f16, weight=5, session_id=1)
     db.record_access(con, cid2, vec_f16, weight=1, session_id=1)
     ranked = db.ranked_by_frecency(con, v, candidates=10)
-    assert ranked[0] == cid1, "chunk with more/heavier accesses should rank first"
-    assert cid2 in ranked
+    ids = [cid for cid, _ in ranked]
+    assert ids[0] == cid1, "chunk with more/heavier accesses should rank first"
+    assert cid2 in ids
 
 
 def test_ranked_by_frecency_empty_when_no_accesses(con):
     assert db.ranked_by_frecency(con, np.zeros(DIM, dtype="float32"), candidates=10) == []
+
+
+def test_ranked_by_frecency_returns_scores(con):
+    """ranked_by_frecency returns (chunk_id, score) tuples."""
+    cid = _insert_chunk(con, doc="doc-s", file="01-s.md")
+    v = np.random.randn(DIM).astype("float32")
+    v /= np.linalg.norm(v)
+    vec_f16 = np.asarray(v, dtype="float16").tobytes()
+    db.increment_session(con)
+    db.record_access(con, cid, vec_f16, weight=5, session_id=1)
+    ranked = db.ranked_by_frecency(con, v, candidates=10)
+    assert len(ranked) >= 1
+    assert isinstance(ranked[0], tuple), "should return (chunk_id, score) tuples"
+    assert len(ranked[0]) == 2
+    chunk_id, score = ranked[0]
+    assert chunk_id == cid
+    assert score > 0
 
 
 # --- Task 4: search integration ---

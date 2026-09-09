@@ -146,7 +146,8 @@ def frecency_score(accesses: list, query_vec: np.ndarray,
 
 
 def ranked_by_frecency(con: sqlite3.Connection, query_vec: np.ndarray,
-                       candidates: int, doc: str | None = None) -> list[int]:
+                       candidates: int, doc: str | None = None
+                       ) -> list[tuple[int, float]]:
     session = get_session(con)
     sql = ("SELECT DISTINCT a.chunk_id FROM accesses a "
            "JOIN chunks c ON c.id = a.chunk_id")
@@ -175,7 +176,7 @@ def ranked_by_frecency(con: sqlite3.Connection, query_vec: np.ndarray,
             con.execute(f"DELETE FROM accesses WHERE id IN ({placeholders})",
                         all_prune)
 
-    return sorted(scores, key=scores.get, reverse=True)[:candidates]
+    return sorted(scores.items(), key=lambda x: x[1], reverse=True)[:candidates]
 
 
 def replace_document(con: sqlite3.Connection, doc: str, chunks: list[dict],

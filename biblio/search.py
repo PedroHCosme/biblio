@@ -65,8 +65,9 @@ def search(query: str, output=None, top: int = 5, doc: str | None = None,
                         db.search_fts(con, query, candidates, doc)]
 
             if not no_frecency:
-                frecency_ids = db.ranked_by_frecency(con, vector, candidates, doc)
-                if frecency_ids:
+                frecency_ranked = db.ranked_by_frecency(con, vector, candidates, doc)
+                if frecency_ranked:
+                    frecency_ids = [cid for cid, _ in frecency_ranked]
                     rankings.append(frecency_ids)
 
             for chunk_id, row in db.details(
