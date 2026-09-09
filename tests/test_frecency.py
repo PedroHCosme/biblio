@@ -262,6 +262,78 @@ def test_search_does_not_increment_session(tmp_path):
         con.close()
 
 
+def test_search_fusion_mode_flat(synthetic_bibliotheca):
+    """fusion_mode='flat' should work (current default behavior)."""
+    results = search("ancoragem", output=synthetic_bibliotheca, top=5,
+                     fusion_mode="flat")
+    assert results
+
+
+def test_search_fusion_mode_weighted(synthetic_bibliotheca):
+    """fusion_mode='weighted' should work without error."""
+    results = search("ancoragem", output=synthetic_bibliotheca, top=5,
+                     fusion_mode="weighted")
+    assert results
+
+
+def test_search_fusion_mode_bonus(synthetic_bibliotheca):
+    """fusion_mode='bonus' should work without error."""
+    results = search("ancoragem", output=synthetic_bibliotheca, top=5,
+                     fusion_mode="bonus")
+    assert results
+
+
+def test_search_fusion_weighted_and_bonus_run_frecency_math(synthetic_bibliotheca):
+    """The other fusion tests never populate accesses, so the weighted-weight and
+    bonus-additive code paths never execute. This one records real accesses so
+    `all_frecency_scores` is non-empty and the frec_weight / bonus formulas run."""
+    query = "comprimento de ancoragem"
+    baseline = search(query, output=synthetic_bibliotheca, top=5)
+    assert baseline, "search must return results"
+    top_file = baseline[0]["file"]
+
+    con = db.connect(synthetic_bibliotheca)
+    try:
+        vec = np.frombuffer(
+            db.get_last_query_vec(con), dtype="float16").astype("float32")
+        row = con.execute(
+            "SELECT id FROM chunks WHERE file = ? LIMIT 1", (top_file,)).fetchone()
+        assert row, f"chunk for {top_file} not found"
+        cid = row["id"]
+        vec_f16 = np.asarray(vec, dtype="float16").tobytes()
+        session = db.get_session(con)
+        for _ in range(5):
+            db.record_access(con, cid, vec_f16, weight=5, session_id=session)
+    finally:
+        con.close()
+
+    for mode in ("weighted", "bonus"):
+        res = search(query, output=synthetic_bibliotheca, top=5, fusion_mode=mode)
+        assert res, f"fusion_mode={mode} returned no results"
+        files = [r["file"] for r in res]
+        assert top_file in files, f"{mode}: heavily-accessed file dropped out"
+        assert files.index(top_file) == 0, \
+            f"{mode}: frecency math did not keep the boosted file on top"
+
+
+def test_search_record_appearances_false(tmp_path):
+    """record_appearances=False should skip access recording in search."""
+    from biblio import embed
+    con = db.connect(tmp_path)
+    con.execute("INSERT OR IGNORE INTO config VALUES('model', ?)", (embed.MODEL,))
+    con.commit()
+    con.close()
+
+    search("test", output=tmp_path, top=5, record_appearances=False)
+
+    con = db.connect(tmp_path)
+    try:
+        rows = con.execute("SELECT COUNT(*) FROM accesses").fetchone()[0]
+        assert rows == 0, "no accesses should be recorded with record_appearances=False"
+    finally:
+        con.close()
+
+
 # --- Task 5: CLI ---
 
 def test_cli_hit_records_access(synthetic_bibliotheca, monkeypatch):

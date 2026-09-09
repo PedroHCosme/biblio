@@ -1,6 +1,7 @@
 """Hybrid search. Returns path, lines, score, and heading. Never the body."""
 import re
 import unicodedata
+from math import exp
 from pathlib import Path
 
 import numpy as np
@@ -43,14 +44,21 @@ def _interval(filepath: str, row: dict, context: str) -> tuple[int, int]:
 
 
 def search(query: str, output=None, top: int = 5, doc: str | None = None,
-           context: str = "section", no_frecency: bool = False) -> list[dict]:
+           context: str = "section", no_frecency: bool = False,
+           fusion_mode: str = "flat",
+           record_appearances: bool = True) -> list[dict]:
     """Covers all registered bibliothecas, unless `output` (path or list) restricts."""
+    # Three fusion modes (flat/weighted/bonus) compete here for a benchmark to
+    # pick one. Temporary: Task 7 deletes the losers and the
+    # fusion_mode / record_appearances params.
     candidates = top * MULTIPLE
     vector = embed.vectorize_query(query)
     vec_f16 = np.asarray(vector, dtype="float16").tobytes()
 
     lists: list[list] = []
     rows: dict = {}
+    all_frecency_scores: dict[tuple, float] = {}
+    list_is_frecency: list[bool] = []
     for bibliotheca in all_libs(output):
         if not (bibliotheca / db.DB_FILE).exists():
             if output is None:
@@ -68,18 +76,38 @@ def search(query: str, output=None, top: int = 5, doc: str | None = None,
             if not no_frecency:
                 frecency_ranked = db.ranked_by_frecency(con, vector, candidates, doc)
                 if frecency_ranked:
-                    frecency_ids = [cid for cid, _ in frecency_ranked]
-                    rankings.append(frecency_ids)
+                    for cid, sc in frecency_ranked:
+                        all_frecency_scores[(bibliotheca, cid)] = sc
+                    if fusion_mode in ("flat", "weighted"):
+                        rankings.append([cid for cid, _ in frecency_ranked])
 
             for chunk_id, row in db.details(
                     con, list({i for r in rankings for i in r})).items():
                 rows[(bibliotheca, chunk_id)] = row
-            lists += [[(bibliotheca, i) for i in r] for r in rankings]
+            for j, r in enumerate(rankings):
+                lists.append([(bibliotheca, i) for i in r])
+                list_is_frecency.append(j == 2)  # rankings = [vector, fts, frecency?]; frecency is always index 2
         finally:
             con.close()
 
     q_tokens = _tokens(query)
-    scored = rrf(lists)
+    if fusion_mode == "weighted" and all_frecency_scores:
+        max_frec = max(all_frecency_scores.values())
+        frec_weight = db.BASE_WEIGHT * (1 - exp(-max_frec / db.FRECENCY_SCALE))
+        weights = [frec_weight if is_frec else 1.0 for is_frec in list_is_frecency]
+        scored = rrf(lists, weights=weights)
+    else:
+        scored = rrf(lists)
+
+    # bonus mode is asymmetric: it only REORDERS candidates already retrieved by
+    # vector/FTS (frecency ids were never appended to `rankings` nor fetched via
+    # db.details). flat/weighted instead let a frecency-only chunk enter results.
+    if fusion_mode == "bonus":
+        for key in list(scored):
+            if key in all_frecency_scores:
+                bonus = min(all_frecency_scores[key] / db.BONUS_SCALE, db.MAX_BONUS)
+                scored[key] += bonus
+
     if q_tokens:
         for key, row in rows.items():
             match = q_tokens & _tokens(row["section"] or "")
@@ -109,7 +137,7 @@ def search(query: str, output=None, top: int = 5, doc: str | None = None,
         if len(results) == top:
             break
 
-    if not no_frecency and result_keys:
+    if not no_frecency and record_appearances and result_keys:
         by_lib: dict[Path, list[int]] = {}
         for bib, cid in result_keys:
             by_lib.setdefault(bib, []).append(cid)
