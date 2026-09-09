@@ -84,6 +84,10 @@ ACCESS_CAP = 20
 HALF_LIFE = 7
 SIMILARITY_THRESHOLD = 0.3
 PRUNE_THRESHOLD = 0.01
+BASE_WEIGHT = 2.0
+FRECENCY_SCALE = 1.0  # calibrated by benchmark; 1.0 is placeholder
+MAX_BONUS = 0.03
+BONUS_SCALE = 1.0     # calibrated by benchmark; 1.0 is placeholder
 
 
 def get_session(con: sqlite3.Connection) -> int:

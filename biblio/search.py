@@ -21,12 +21,13 @@ def _tokens(text: str) -> set[str]:
     return {t for t in re.findall(r"[a-z0-9]{3,}", no_accent.lower()) if t not in _STOPWORDS}
 
 
-def rrf(lists: list[list]) -> dict:
-    """1/(K + position) per list, summed."""
+def rrf(lists: list[list], weights: list[float] | None = None) -> dict:
+    """1/(K + position) per list, summed. Optional per-list weights."""
     scores: dict = {}
-    for lst in lists:
+    for i, lst in enumerate(lists):
+        w = weights[i] if weights else 1.0
         for position, key in enumerate(lst, start=1):
-            scores[key] = scores.get(key, 0.0) + 1 / (K_RRF + position)
+            scores[key] = scores.get(key, 0.0) + w / (K_RRF + position)
     return scores
 
 

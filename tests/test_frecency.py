@@ -6,7 +6,7 @@ import pytest
 
 from biblio import db
 from biblio.embed import DIM
-from biblio.search import search
+from biblio.search import search, rrf
 from biblio.cli import main as cli_main
 from biblio.skill import skill_text, claude_md_text
 
@@ -365,3 +365,25 @@ def test_protocol_step_numbering():
     assert "**3." in text
     assert "**4." in text
     assert "**5." in text
+
+
+# --- Weighted RRF and fusion constants ---
+
+def test_rrf_with_weights():
+    """Weighted list should contribute more than unweighted."""
+    list_a = ["x", "y", "z"]
+    list_b = ["y", "x", "z"]
+    # Equal weights = default behavior
+    equal = rrf([list_a, list_b])
+    # list_b weight=3 should boost "y" relative to "x"
+    weighted = rrf([list_a, list_b], weights=[1.0, 3.0])
+    assert weighted["y"] > weighted["x"], \
+        "y is rank-1 in the 3x-weighted list, should beat x"
+    assert equal["y"] == pytest.approx(equal["x"]), \
+        "without weights, x and y tie (each rank-1 in one list)"
+
+
+def test_rrf_weights_none_is_default():
+    """weights=None should produce identical results to no-arg call."""
+    lists = [["a", "b"], ["b", "a"]]
+    assert rrf(lists) == rrf(lists, weights=None)
