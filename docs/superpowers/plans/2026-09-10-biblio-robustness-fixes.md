@@ -63,7 +63,7 @@ def test_registers_bibliotheca_before_processing(tmp_path, monkeypatch):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `/c/Users/Usuario/.conda/envs/alcoa/python.exe -m pytest tests/test_robustness.py::test_registers_bibliotheca_before_processing -v`
+Run: `/c/Users/Usuario/.conda/envs/biblio/python.exe -m pytest tests/test_robustness.py::test_registers_bibliotheca_before_processing -v`
 Expected: FAIL — registry empty because the trailing `register()` block only runs when `count["ok"] or count["skipped"]`, and here everything failed.
 
 - [ ] **Step 3: Move `register()` up and delete the trailing block**
@@ -88,7 +88,7 @@ Delete the block at the end of the function:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `/c/Users/Usuario/.conda/envs/alcoa/python.exe -m pytest tests/test_robustness.py::test_registers_bibliotheca_before_processing tests/test_idempotency.py -v`
+Run: `/c/Users/Usuario/.conda/envs/biblio/python.exe -m pytest tests/test_robustness.py::test_registers_bibliotheca_before_processing tests/test_idempotency.py -v`
 Expected: PASS (idempotency tests unaffected — `register()` writes the isolated test registry, not the bibliotheca folder).
 
 - [ ] **Step 5: Commit**
@@ -130,7 +130,7 @@ def test_description_lists_up_to_twenty_bibliothecas(monkeypatch):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `/c/Users/Usuario/.conda/envs/alcoa/python.exe -m pytest tests/test_robustness.py::test_description_lists_up_to_twenty_bibliothecas -v`
+Run: `/c/Users/Usuario/.conda/envs/biblio/python.exe -m pytest tests/test_robustness.py::test_description_lists_up_to_twenty_bibliothecas -v`
 Expected: FAIL — `lib08` not in description (cap is 8).
 
 - [ ] **Step 3: Change the constant**
@@ -143,7 +143,7 @@ MAX_NAMES = 20
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `/c/Users/Usuario/.conda/envs/alcoa/python.exe -m pytest tests/test_robustness.py::test_description_lists_up_to_twenty_bibliothecas -v`
+Run: `/c/Users/Usuario/.conda/envs/biblio/python.exe -m pytest tests/test_robustness.py::test_description_lists_up_to_twenty_bibliothecas -v`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
@@ -201,7 +201,7 @@ def test_model_retries_online_when_offline_load_fails(monkeypatch):
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `/c/Users/Usuario/.conda/envs/alcoa/python.exe -m pytest tests/test_robustness.py -k "hub_offline or retries_online" -v`
+Run: `/c/Users/Usuario/.conda/envs/biblio/python.exe -m pytest tests/test_robustness.py -k "hub_offline or retries_online" -v`
 Expected: FAIL — env vars not set on import; `_model()` has no retry.
 
 - [ ] **Step 3: Implement**
@@ -240,7 +240,7 @@ def _model():
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `/c/Users/Usuario/.conda/envs/alcoa/python.exe -m pytest tests/test_robustness.py -k "hub_offline or retries_online" tests/test_search.py -v`
+Run: `/c/Users/Usuario/.conda/envs/biblio/python.exe -m pytest tests/test_robustness.py -k "hub_offline or retries_online" tests/test_search.py -v`
 Expected: PASS (search tests still load the real cached model with offline forced).
 
 - [ ] **Step 5: Commit**
@@ -286,7 +286,7 @@ def test_update_on_windows_prints_command_and_does_not_run(monkeypatch, capsys):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `/c/Users/Usuario/.conda/envs/alcoa/python.exe -m pytest tests/test_robustness.py::test_update_on_windows_prints_command_and_does_not_run -v`
+Run: `/c/Users/Usuario/.conda/envs/biblio/python.exe -m pytest tests/test_robustness.py::test_update_on_windows_prints_command_and_does_not_run -v`
 Expected: FAIL — `subprocess.run` is called.
 
 - [ ] **Step 3: Implement**
@@ -309,7 +309,7 @@ Replace the `update` branch in [`biblio/cli.py`](../../../biblio/cli.py):
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `/c/Users/Usuario/.conda/envs/alcoa/python.exe -m pytest tests/test_robustness.py::test_update_on_windows_prints_command_and_does_not_run -v`
+Run: `/c/Users/Usuario/.conda/envs/biblio/python.exe -m pytest tests/test_robustness.py::test_update_on_windows_prints_command_and_does_not_run -v`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
@@ -372,7 +372,7 @@ def test_survey_zero_cap_flags_nothing(tmp_path):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `/c/Users/Usuario/.conda/envs/alcoa/python.exe -m pytest tests/test_robustness.py -k survey -v`
+Run: `/c/Users/Usuario/.conda/envs/biblio/python.exe -m pytest tests/test_robustness.py -k survey -v`
 Expected: FAIL — `AttributeError: module 'biblio.pipeline' has no attribute 'survey'`.
 
 - [ ] **Step 3: Implement**
@@ -399,7 +399,7 @@ def survey(target: Path | str, max_ocr_pages: int = 25) -> dict:
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `/c/Users/Usuario/.conda/envs/alcoa/python.exe -m pytest tests/test_robustness.py -k survey -v`
+Run: `/c/Users/Usuario/.conda/envs/biblio/python.exe -m pytest tests/test_robustness.py -k survey -v`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
@@ -444,7 +444,7 @@ def test_ingest_skips_excluded_files_and_reports_them(tmp_path):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `/c/Users/Usuario/.conda/envs/alcoa/python.exe -m pytest tests/test_robustness.py::test_ingest_skips_excluded_files_and_reports_them -v`
+Run: `/c/Users/Usuario/.conda/envs/biblio/python.exe -m pytest tests/test_robustness.py::test_ingest_skips_excluded_files_and_reports_them -v`
 Expected: FAIL — `ingest()` has no `exclude` parameter (`TypeError`).
 
 - [ ] **Step 3: Implement**
@@ -484,7 +484,7 @@ Add one line to the docstring: `` `exclude`: paths to skip (the CLI's over-OCR-c
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `/c/Users/Usuario/.conda/envs/alcoa/python.exe -m pytest tests/test_robustness.py::test_ingest_skips_excluded_files_and_reports_them tests/test_idempotency.py -v`
+Run: `/c/Users/Usuario/.conda/envs/biblio/python.exe -m pytest tests/test_robustness.py::test_ingest_skips_excluded_files_and_reports_them tests/test_idempotency.py -v`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
@@ -565,7 +565,7 @@ def test_add_yes_skips_over_cap_file_processes_the_rest(tmp_path, capsys, stub_h
 
 - [ ] **Step 2: Run tests to verify they fail**
 
-Run: `/c/Users/Usuario/.conda/envs/alcoa/python.exe -m pytest tests/test_robustness.py -k "dry_run or over_cap_file" -v`
+Run: `/c/Users/Usuario/.conda/envs/biblio/python.exe -m pytest tests/test_robustness.py -k "dry_run or over_cap_file" -v`
 Expected: FAIL — `add` has no `--dry-run` / `--max-ocr-pages` / `--yes` (`SystemExit: 2` from argparse).
 
 - [ ] **Step 3: Add the flags**
@@ -659,12 +659,12 @@ def _over_cap_exclude(report: dict, interactive: bool):
 
 - [ ] **Step 6: Run tests to verify they pass**
 
-Run: `/c/Users/Usuario/.conda/envs/alcoa/python.exe -m pytest tests/test_robustness.py -k "dry_run or over_cap_file" -v`
+Run: `/c/Users/Usuario/.conda/envs/biblio/python.exe -m pytest tests/test_robustness.py -k "dry_run or over_cap_file" -v`
 Expected: PASS
 
 - [ ] **Step 7: Full suite**
 
-Run: `rtk vitest run 2>/dev/null; /c/Users/Usuario/.conda/envs/alcoa/python.exe -m pytest -q`
+Run: `rtk vitest run 2>/dev/null; /c/Users/Usuario/.conda/envs/biblio/python.exe -m pytest -q`
 Expected: PASS (all pre-existing tests still green).
 
 - [ ] **Step 8: Commit**
@@ -711,7 +711,7 @@ def test_explicit_no_summary_never_prompts(monkeypatch):
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `/c/Users/Usuario/.conda/envs/alcoa/python.exe -m pytest tests/test_robustness.py -k "auto_summary or explicit_no_summary" -v`
+Run: `/c/Users/Usuario/.conda/envs/biblio/python.exe -m pytest tests/test_robustness.py -k "auto_summary or explicit_no_summary" -v`
 Expected: FAIL — `auto` returns `True` without asking when Ollama is ready.
 
 - [ ] **Step 3: Implement**
@@ -744,7 +744,7 @@ def wants_summary(mode: str, ask=None, warn=print) -> bool:
 
 - [ ] **Step 4: Run tests to verify they pass**
 
-Run: `/c/Users/Usuario/.conda/envs/alcoa/python.exe -m pytest tests/test_robustness.py -k "auto_summary or explicit_no_summary" tests/test_summarize.py -v`
+Run: `/c/Users/Usuario/.conda/envs/biblio/python.exe -m pytest tests/test_robustness.py -k "auto_summary or explicit_no_summary" tests/test_summarize.py -v`
 Expected: PASS
 
 - [ ] **Step 5: Commit**
@@ -782,7 +782,7 @@ def test_protocol_teaches_folder_ingest_knobs():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `/c/Users/Usuario/.conda/envs/alcoa/python.exe -m pytest tests/test_robustness.py::test_protocol_teaches_folder_ingest_knobs -v`
+Run: `/c/Users/Usuario/.conda/envs/biblio/python.exe -m pytest tests/test_robustness.py::test_protocol_teaches_folder_ingest_knobs -v`
 Expected: FAIL — `PROTOCOL` says nothing about `--dry-run`.
 
 - [ ] **Step 3: Implement**
@@ -810,12 +810,12 @@ prompts once if Ollama is installed.
 
 - [ ] **Step 4: Run test to verify it passes**
 
-Run: `/c/Users/Usuario/.conda/envs/alcoa/python.exe -m pytest tests/test_robustness.py::test_protocol_teaches_folder_ingest_knobs -v`
+Run: `/c/Users/Usuario/.conda/envs/biblio/python.exe -m pytest tests/test_robustness.py::test_protocol_teaches_folder_ingest_knobs -v`
 Expected: PASS
 
 - [ ] **Step 5: Full suite + commit**
 
-Run: `/c/Users/Usuario/.conda/envs/alcoa/python.exe -m pytest -q`
+Run: `/c/Users/Usuario/.conda/envs/biblio/python.exe -m pytest -q`
 Expected: PASS
 
 ```bash
@@ -831,7 +831,7 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ## Verification checklist
 
-- [ ] `/c/Users/Usuario/.conda/envs/alcoa/python.exe -m pytest -q` — all green
+- [ ] `/c/Users/Usuario/.conda/envs/biblio/python.exe -m pytest -q` — all green
 - [ ] `biblio search "x"` no longer prints the HF Hub warning and returns fast (manual, needs cached model)
 - [ ] `biblio add <folder> --dry-run` prints the estimate and creates nothing
 - [ ] `biblio update` on Windows prints the pip command, exits 0, changes nothing
