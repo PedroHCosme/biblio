@@ -1,7 +1,11 @@
 """Embeddings: model and dimension decided by measurement."""
 import functools
+import os
 import re
 from pathlib import Path
+
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 
 import numpy as np
 
@@ -19,7 +23,16 @@ _FRONTMATTER = re.compile(r"\A---\n.*?\n---\n", re.S)
 @functools.lru_cache(maxsize=1)
 def _model():
     from sentence_transformers import SentenceTransformer
-    return SentenceTransformer(MODEL)
+    try:
+        return SentenceTransformer(MODEL)
+    except Exception:
+        # genuine first run: model not cached. Drop offline, retry once, restore.
+        prev = os.environ.pop("HF_HUB_OFFLINE", None)
+        try:
+            return SentenceTransformer(MODEL)
+        finally:
+            if prev is not None:
+                os.environ["HF_HUB_OFFLINE"] = prev
 
 
 def windows(text: str, first_line: int = 1) -> list[dict]:
