@@ -263,7 +263,7 @@ def main(argv=None) -> int:
         if sys.platform == "win32":
             print("biblio can't update itself on Windows (the running .exe is locked).\n"
                   "Run this in a fresh shell:\n\n"
-                  f"  {sys.executable} -m pip install --upgrade {url}")
+                  f'  "{sys.executable}" -m pip install --upgrade {url}')
             return 0
         import subprocess
         print(f"Updating from {url} ...")

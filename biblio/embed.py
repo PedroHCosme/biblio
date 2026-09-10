@@ -26,13 +26,19 @@ def _model():
     try:
         return SentenceTransformer(MODEL)
     except Exception:
-        # genuine first run: model not cached. Drop offline, retry once, restore.
-        prev = os.environ.pop("HF_HUB_OFFLINE", None)
+        # genuine first run: model not cached. huggingface_hub froze
+        # HF_HUB_OFFLINE into a module constant at import, so clearing the env
+        # var alone is not enough — toggle the constant too. Retry once, restore.
+        import huggingface_hub.constants as hf_const
+        prev_env = os.environ.pop("HF_HUB_OFFLINE", None)
+        prev_const = hf_const.HF_HUB_OFFLINE
+        hf_const.HF_HUB_OFFLINE = False
         try:
             return SentenceTransformer(MODEL)
         finally:
-            if prev is not None:
-                os.environ["HF_HUB_OFFLINE"] = prev
+            hf_const.HF_HUB_OFFLINE = prev_const
+            if prev_env is not None:
+                os.environ["HF_HUB_OFFLINE"] = prev_env
 
 
 def windows(text: str, first_line: int = 1) -> list[dict]:

@@ -48,24 +48,38 @@ def test_importing_embed_forces_hub_offline(monkeypatch):
 
 
 def test_model_retries_online_when_offline_load_fails(monkeypatch):
+    import huggingface_hub.constants as hf_const
     import biblio.embed as e
     e._model.cache_clear()
+    monkeypatch.setattr(hf_const, "HF_HUB_OFFLINE", True)
     seen = []
 
     class FakeST:
         def __init__(self, name):
-            seen.append(os.environ.get("HF_HUB_OFFLINE"))
+            seen.append(hf_const.HF_HUB_OFFLINE)
             if len(seen) == 1:
                 raise OSError("model not in cache")
 
-    monkeypatch.setenv("HF_HUB_OFFLINE", "1")
     monkeypatch.setattr("sentence_transformers.SentenceTransformer", FakeST)
 
     e._model()
 
-    assert seen == ["1", None]  # first attempt offline, retry with the var cleared
-    assert os.environ["HF_HUB_OFFLINE"] == "1"  # restored afterwards
+    assert seen == [True, False]  # retried with offline actually disabled
+    assert hf_const.HF_HUB_OFFLINE is True  # restored
     e._model.cache_clear()
+
+
+def test_over_cap_exclude_interactive_prompt(monkeypatch):
+    from pathlib import Path
+    from biblio import cli
+
+    report = {"over_cap": {Path("x.pdf"): 40}}
+    answers = iter(["a", "p", ""])
+    monkeypatch.setattr("builtins.input", lambda _p: next(answers))
+
+    assert cli._over_cap_exclude(report, interactive=True) is None
+    assert cli._over_cap_exclude(report, interactive=True) == frozenset()
+    assert cli._over_cap_exclude(report, interactive=True) == frozenset(report["over_cap"])
 
 
 def test_update_on_windows_prints_command_and_does_not_run(monkeypatch, capsys):
