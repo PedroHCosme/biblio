@@ -143,6 +143,7 @@ def ingest(target: Path | str, output: Path | str | None = None, device: str = "
     """
     bibliotheca = root(output)
     bibliotheca.mkdir(parents=True, exist_ok=True)
+    register(bibliotheca)  # early: a multi-day or interrupted run must still be visible
     summarize_with_ollama = ollama.wants_summary(summary, ask, warn)
 
     count = {"ok": 0, "skipped": 0, "failed": 0}
@@ -155,6 +156,4 @@ def ingest(target: Path | str, output: Path | str | None = None, device: str = "
             warn(f"{f.name}: FAILED ({err})")
             count["failed"] += 1
 
-    if count["ok"] or count["skipped"]:
-        register(bibliotheca)
     return count
