@@ -109,3 +109,21 @@ def test_survey_zero_cap_flags_nothing(tmp_path):
     src.mkdir()
     _blank_pdf(src / "big.pdf", 4)
     assert pipeline.survey(src, max_ocr_pages=0)["over_cap"] == {}
+
+
+def test_ingest_skips_excluded_files_and_reports_them(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "keep.md").write_text("# Scope\n" + "technical text. " * 40, encoding="utf-8")
+    (src / "huge.md").write_text("# Big\n" + "text. " * 40, encoding="utf-8")
+    out = tmp_path / "lib"
+    msgs = []
+
+    count = pipeline.ingest(src, output=out, exclude=frozenset({src / "huge.md"}),
+                            warn=msgs.append)
+
+    assert (out / "keep").is_dir()
+    assert not (out / "huge").exists()
+    assert count["skipped"] == 1
+    assert any("over OCR budget" in m for m in msgs)
+    assert any("huge" in m for m in msgs)

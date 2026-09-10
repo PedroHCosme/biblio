@@ -150,7 +150,7 @@ def _process_one(path: Path, bibliotheca: Path, device: str, force: bool,
 def ingest(target: Path | str, output: Path | str | None = None, device: str = "auto",
            force: bool = False, warn=print, ask=None,
            summary: str = "auto", max_size_mb: float | None = None,
-           fast: bool = False) -> dict[str, int]:
+           fast: bool = False, exclude=frozenset()) -> dict[str, int]:
     """Processes a file (.pdf/.md/.txt) or a folder.
 
     `warn` is the only progress channel: the GUI passes its own.
@@ -158,6 +158,7 @@ def ingest(target: Path | str, output: Path | str | None = None, device: str = "
     'no' never summarizes.
     `max_size_mb`: skips files larger than this (None = no limit).
     `fast`: skips Docling/OCR, uses pymupdf4llm for everything.
+    `exclude`: paths to skip (the CLI's over-OCR-cap set).
     """
     bibliotheca = root(output)
     bibliotheca.mkdir(parents=True, exist_ok=True)
@@ -166,6 +167,9 @@ def ingest(target: Path | str, output: Path | str | None = None, device: str = "
 
     count = {"ok": 0, "skipped": 0, "failed": 0}
     for f in _files(Path(target)):
+        if f in exclude:
+            count["skipped"] += 1
+            continue
         try:
             count[_process_one(f, bibliotheca, device, force, warn,
                                summarize_with_ollama,
@@ -174,4 +178,9 @@ def ingest(target: Path | str, output: Path | str | None = None, device: str = "
             warn(f"{f.name}: FAILED ({err})")
             count["failed"] += 1
 
+    if exclude:
+        warn("\nskipped (over OCR budget):")
+        for f in sorted(exclude):
+            warn(f'  {f.stem}  — run: biblio add "{f}" --fast   '
+                 f'(or --max-ocr-pages 0)')
     return count
