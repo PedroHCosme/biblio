@@ -10,7 +10,7 @@ from pathlib import Path
 from biblio.paths import known_bibliothecas
 
 DEST = Path.home() / ".claude" / "skills" / "bibliotheca"
-MAX_NAMES = 8
+MAX_NAMES = 20
 
 
 def _executable() -> str:
