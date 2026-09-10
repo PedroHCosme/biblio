@@ -37,7 +37,7 @@ def _print_survey(report: dict, target: Path) -> None:
         print(f"           biblio add {target} --max-ocr-pages 0   # OCR everything, no cap")
 
 
-def _over_cap_exclude(report: dict, interactive: bool):
+def _over_cap_exclude(report: dict, interactive: bool) -> frozenset | None:
     """Returns the set of paths to exclude, or None to abort the run."""
     over = report["over_cap"]
     if interactive:
@@ -200,7 +200,7 @@ def main(argv=None) -> int:
                 print("aborted.")
                 return 1
 
-        ask = None if args.yes else _confirm
+        ask = _confirm if sys.stdin.isatty() and not args.yes else None
         count = pipeline.ingest(target, output=args.out, device=args.device,
                                 force=args.force, ask=ask,
                                 summary=args.summary_mode, max_size_mb=args.max_size,
@@ -221,7 +221,8 @@ def main(argv=None) -> int:
         return 0
 
     if args.command == "index":
-        dest = index.generate(output=args.out, summary=args.summary_mode, ask=_confirm)
+        dest = index.generate(output=args.out, summary=args.summary_mode,
+                              ask=(_confirm if sys.stdin.isatty() else None))
         skill.install()
         print(dest)
         return 0

@@ -6,7 +6,7 @@ import sys
 import numpy as np
 import pytest
 
-from biblio import cli, ollama, pipeline, skill
+from biblio import ollama, pipeline, skill
 from biblio.cli import main
 from biblio.paths import known_bibliothecas
 
@@ -187,3 +187,18 @@ def test_explicit_no_summary_never_prompts(monkeypatch):
     def boom(_t):
         raise AssertionError("should not ask")
     assert ollama.wants_summary("no", ask=boom) is False
+
+
+def test_add_auto_summary_no_tty_does_not_crash(tmp_path, monkeypatch, stub_heavy):
+    monkeypatch.setattr(ollama, "available", lambda: True)
+    monkeypatch.setattr(ollama, "_has_model", lambda: True)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: False)
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "doc.md").write_text("# Scope\n" + "technical text. " * 40, encoding="utf-8")
+    out = tmp_path / "lib"
+
+    rc = main(["--out", str(out), "add", str(src)])  # no --yes, no --summary
+
+    assert rc == 0
+    assert (out / "doc").is_dir()  # processed; auto-summary resolved to no (ask=None)
