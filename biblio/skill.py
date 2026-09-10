@@ -77,6 +77,22 @@ The `**Terms:**` line in each block is the safety net for exact identifiers
 **5. Never read the entire `INDEX.md`.** Two hundred documents yield 40k tokens.
 It was written for `grep`, not for reading.
 
+## Ingesting a folder
+
+Before ingesting a folder for the user, estimate the cost first:
+
+```bash
+{command} add <folder> --dry-run
+```
+
+Show them the document count and the OCR-page estimate. If any file is flagged
+over the OCR cap, put the choice to the user — index that file `--fast` (native
+text only, scanned pages come out empty), raise `--max-ocr-pages`, or skip it.
+Do **not** pass `--yes` past the cap without their OK.
+
+Summaries stay opt-in: pass `--summary` only if the user asked. A plain `add`
+prompts once if Ollama is installed.
+
 ## Other commands
 
 | Command | Purpose |

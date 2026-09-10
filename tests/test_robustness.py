@@ -202,3 +202,10 @@ def test_add_auto_summary_no_tty_does_not_crash(tmp_path, monkeypatch, stub_heav
 
     assert rc == 0
     assert (out / "doc").is_dir()  # processed; auto-summary resolved to no (ask=None)
+
+
+def test_protocol_teaches_folder_ingest_knobs():
+    for text in (skill.skill_text(), skill.claude_md_text()):
+        assert "--dry-run" in text
+        assert "--max-ocr-pages" in text
+        assert "Ingesting a folder" in text
