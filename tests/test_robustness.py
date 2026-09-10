@@ -1,8 +1,10 @@
 """Robustness fixes: partial runs stay visible, more corpora get listed."""
 import importlib
 import os
+import sys
 
 from biblio import pipeline, skill
+from biblio.cli import main
 from biblio.paths import known_bibliothecas
 
 
@@ -61,3 +63,16 @@ def test_model_retries_online_when_offline_load_fails(monkeypatch):
     assert seen == ["1", None]  # first attempt offline, retry with the var cleared
     assert os.environ["HF_HUB_OFFLINE"] == "1"  # restored afterwards
     e._model.cache_clear()
+
+
+def test_update_on_windows_prints_command_and_does_not_run(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "platform", "win32")
+    calls = []
+    monkeypatch.setattr("subprocess.run", lambda *a, **k: calls.append(a))
+
+    rc = main(["update"])
+
+    assert rc == 0
+    assert calls == []
+    out = capsys.readouterr().out
+    assert "pip install --upgrade git+https://github.com/PedroHCosme/biblio.git" in out

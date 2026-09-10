@@ -195,10 +195,16 @@ def main(argv=None) -> int:
         return 0
 
     if args.command == "update":
-        import subprocess
         url = "git+https://github.com/PedroHCosme/biblio.git"
+        if sys.platform == "win32":
+            print("biblio can't update itself on Windows (the running .exe is locked).\n"
+                  "Run this in a fresh shell:\n\n"
+                  f"  {sys.executable} -m pip install --upgrade {url}")
+            return 0
+        import subprocess
         print(f"Updating from {url} ...")
-        return subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", url]).returncode
+        return subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--upgrade", url]).returncode
 
     return 1
 
