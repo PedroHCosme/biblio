@@ -3,7 +3,10 @@ import importlib
 import os
 import sys
 
-from biblio import pipeline, skill
+import numpy as np
+import pytest
+
+from biblio import cli, ollama, pipeline, skill
 from biblio.cli import main
 from biblio.paths import known_bibliothecas
 
@@ -127,3 +130,43 @@ def test_ingest_skips_excluded_files_and_reports_them(tmp_path):
     assert count["skipped"] == 1
     assert any("over OCR budget" in m for m in msgs)
     assert any("huge" in m for m in msgs)
+
+
+@pytest.fixture
+def stub_heavy(monkeypatch):
+    """Keep CLI add tests off the real model and the real ~/.claude skill dir."""
+    monkeypatch.setattr("biblio.pipeline.embed.vectorize",
+                        lambda texts: np.zeros((len(texts), 384), dtype="float32"))
+    monkeypatch.setattr("biblio.cli.skill.install", lambda *a, **k: None)
+    monkeypatch.setattr("biblio.cli.index.generate", lambda *a, **k: None)
+    monkeypatch.setattr("biblio.version_check.check", lambda *a, **k: None)
+
+
+def test_dry_run_prints_estimate_and_writes_nothing(tmp_path, capsys, stub_heavy):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "a.md").write_text("# x\ny", encoding="utf-8")
+    _blank_pdf(src / "big.pdf", 4)
+    out = tmp_path / "lib"
+
+    rc = main(["--out", str(out), "add", str(src), "--dry-run", "--max-ocr-pages", "2"])
+
+    assert rc == 0
+    assert not out.exists()  # no bibliotheca created
+    report = capsys.readouterr().out
+    assert "OCR pages total: 4" in report
+    assert "big" in report and "Over --max-ocr-pages (2)" in report
+
+
+def test_add_yes_skips_over_cap_file_processes_the_rest(tmp_path, capsys, stub_heavy):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "keep.md").write_text("# Scope\n" + "technical text. " * 40, encoding="utf-8")
+    _blank_pdf(src / "big.pdf", 4)
+    out = tmp_path / "lib"
+
+    rc = main(["--out", str(out), "add", str(src), "--yes", "--max-ocr-pages", "2"])
+
+    assert (out / "keep").is_dir()
+    assert not (out / "big").exists()
+    assert "skipped (over OCR budget)" in capsys.readouterr().out
