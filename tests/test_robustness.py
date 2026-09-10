@@ -170,3 +170,20 @@ def test_add_yes_skips_over_cap_file_processes_the_rest(tmp_path, capsys, stub_h
     assert (out / "keep").is_dir()
     assert not (out / "big").exists()
     assert "skipped (over OCR budget)" in capsys.readouterr().out
+
+
+def test_auto_summary_prompts_once_and_defaults_no(monkeypatch):
+    monkeypatch.setattr(ollama, "available", lambda: True)
+    monkeypatch.setattr(ollama, "_has_model", lambda: True)
+
+    assert ollama.wants_summary("auto", ask=lambda _t: False) is False
+    assert ollama.wants_summary("auto", ask=lambda _t: True) is True
+    assert ollama.wants_summary("auto", ask=None) is False
+
+
+def test_explicit_no_summary_never_prompts(monkeypatch):
+    monkeypatch.setattr(ollama, "available", lambda: True)
+    monkeypatch.setattr(ollama, "_has_model", lambda: True)
+    def boom(_t):
+        raise AssertionError("should not ask")
+    assert ollama.wants_summary("no", ask=boom) is False

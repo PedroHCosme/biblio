@@ -48,11 +48,17 @@ def _has_model() -> bool:
 def wants_summary(mode: str, ask=None, warn=print) -> bool:
     """Mode -> 'can we summarize now?'.
 
-    'no': never. 'auto' (default): only if Ollama+model are already ready,
-    never downloads. 'yes': asks and installs what's missing.
+    'no': never. 'auto' (default): if Ollama+model are already ready, confirm
+    once per run (default no; `ask` None resolves to no), never downloads.
+    'yes': asks and installs what's missing.
     """
     if mode == "no":
         return False
+    if mode == "auto" and available() and _has_model():
+        if ask is None:
+            return False
+        return ask("Ollama detected — generate per-document summaries "
+                   "(~75s each, CPU)?")
     ok = ensure(ask, allow_install=(mode == "yes"))
     if not ok:
         warn("summaries: Ollama unavailable, continuing without" if mode == "yes"
