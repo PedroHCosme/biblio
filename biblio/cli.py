@@ -12,6 +12,46 @@ def _confirm(text: str) -> bool:
     return input(f"{text} [y/N] ").strip().lower() in ("y", "yes", "s", "sim")
 
 
+def _choose(text: str, options: str, default: str) -> str:
+    raw = input(f"{text} ").strip().lower()
+    return raw[:1] if raw[:1] in options else default
+
+
+def _minutes(ocr_pages: int) -> int:
+    return round(ocr_pages * 30 / 60)  # ~30s/page on CPU
+
+
+def _print_survey(report: dict, target: Path) -> None:
+    by_ext = report["by_ext"]
+    exts = ", ".join(f"{n} {ext}" for ext, n in sorted(by_ext.items()))
+    total = report["total_ocr"]
+    print(f"\n  {sum(by_ext.values())} documents  ({exts})")
+    print(f"  OCR pages total: {total}  (~{_minutes(total)} min on CPU)")
+    over = report["over_cap"]
+    if over:
+        print(f"\n  Over --max-ocr-pages ({report['max_ocr_pages']}):")
+        for f, n in sorted(over.items(), key=lambda kv: -kv[1]):
+            print(f"    {f.stem:<45} {n} OCR pages  (~{_minutes(n)} min)")
+        print(f"\n  Proceed: biblio add {target}                 # prompts about the files above")
+        print(f"           biblio add {target} --yes           # skips them, indexes the rest")
+        print(f"           biblio add {target} --max-ocr-pages 0   # OCR everything, no cap")
+
+
+def _over_cap_exclude(report: dict, interactive: bool) -> frozenset | None:
+    """Returns the set of paths to exclude, or None to abort the run."""
+    over = report["over_cap"]
+    if interactive:
+        choice = _choose(
+            f"{len(over)} files exceed the OCR cap "
+            f"(~{_minutes(sum(over.values()))} min total). "
+            "[p]roceed with all / [s]kip them / [a]bort?", "psa", "s")
+        if choice == "p":
+            return frozenset()
+        if choice == "a":
+            return None
+    return frozenset(over)
+
+
 def _hit(pointer: str) -> int:
     import re
     from biblio import db
@@ -101,6 +141,12 @@ def main(argv=None) -> int:
     a.add_argument("--fast", action="store_true",
                    help="skip OCR (Docling), use only native extraction — fast but "
                    "scanned pages come out empty")
+    a.add_argument("--dry-run", action="store_true",
+                   help="triage the folder, print the OCR estimate, write nothing")
+    a.add_argument("--max-ocr-pages", type=int, default=25, metavar="N",
+                   help="hold back files needing more than N OCR pages (0 = no cap)")
+    a.add_argument("--yes", action="store_true",
+                   help="non-interactive: skip files over --max-ocr-pages without asking")
 
     b = sub.add_parser("search", help="search and return pointers")
     b.add_argument("query")
@@ -138,10 +184,27 @@ def main(argv=None) -> int:
         check()
 
     if args.command == "add":
-        count = pipeline.ingest(Path(args.target), output=args.out, device=args.device,
-                                force=args.force, ask=_confirm,
+        target = Path(args.target)
+        report = (pipeline.survey(target, args.max_ocr_pages)
+                  if args.dry_run or (target.is_dir() and args.max_ocr_pages)
+                  else None)
+        if args.dry_run:
+            _print_survey(report, target)
+            return 0
+
+        exclude = frozenset()
+        if report and report["over_cap"]:
+            interactive = not args.yes and sys.stdin.isatty()
+            exclude = _over_cap_exclude(report, interactive)
+            if exclude is None:
+                print("aborted.")
+                return 1
+
+        ask = _confirm if sys.stdin.isatty() and not args.yes else None
+        count = pipeline.ingest(target, output=args.out, device=args.device,
+                                force=args.force, ask=ask,
                                 summary=args.summary_mode, max_size_mb=args.max_size,
-                                fast=args.fast)
+                                fast=args.fast, exclude=exclude)
         index.generate(output=args.out, summary="no")
         if count["ok"]:
             skill.install()
@@ -158,7 +221,8 @@ def main(argv=None) -> int:
         return 0
 
     if args.command == "index":
-        dest = index.generate(output=args.out, summary=args.summary_mode, ask=_confirm)
+        dest = index.generate(output=args.out, summary=args.summary_mode,
+                              ask=(_confirm if sys.stdin.isatty() else None))
         skill.install()
         print(dest)
         return 0
@@ -195,10 +259,16 @@ def main(argv=None) -> int:
         return 0
 
     if args.command == "update":
-        import subprocess
         url = "git+https://github.com/PedroHCosme/biblio.git"
+        if sys.platform == "win32":
+            print("biblio can't update itself on Windows (the running .exe is locked).\n"
+                  "Run this in a fresh shell:\n\n"
+                  f'  "{sys.executable}" -m pip install --upgrade {url}')
+            return 0
+        import subprocess
         print(f"Updating from {url} ...")
-        return subprocess.run([sys.executable, "-m", "pip", "install", "--upgrade", url]).returncode
+        return subprocess.run(
+            [sys.executable, "-m", "pip", "install", "--upgrade", url]).returncode
 
     return 1
 

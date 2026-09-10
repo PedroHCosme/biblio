@@ -1,7 +1,11 @@
 """Embeddings: model and dimension decided by measurement."""
 import functools
+import os
 import re
 from pathlib import Path
+
+os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
 
 import numpy as np
 
@@ -19,7 +23,22 @@ _FRONTMATTER = re.compile(r"\A---\n.*?\n---\n", re.S)
 @functools.lru_cache(maxsize=1)
 def _model():
     from sentence_transformers import SentenceTransformer
-    return SentenceTransformer(MODEL)
+    try:
+        return SentenceTransformer(MODEL)
+    except Exception:
+        # genuine first run: model not cached. huggingface_hub froze
+        # HF_HUB_OFFLINE into a module constant at import, so clearing the env
+        # var alone is not enough — toggle the constant too. Retry once, restore.
+        import huggingface_hub.constants as hf_const
+        prev_env = os.environ.pop("HF_HUB_OFFLINE", None)
+        prev_const = hf_const.HF_HUB_OFFLINE
+        hf_const.HF_HUB_OFFLINE = False
+        try:
+            return SentenceTransformer(MODEL)
+        finally:
+            hf_const.HF_HUB_OFFLINE = prev_const
+            if prev_env is not None:
+                os.environ["HF_HUB_OFFLINE"] = prev_env
 
 
 def windows(text: str, first_line: int = 1) -> list[dict]:

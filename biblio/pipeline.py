@@ -1,5 +1,6 @@
 """ingest(): the single entry point. CLI and GUI are shells over it."""
 import re
+from collections import Counter
 from pathlib import Path
 
 import yaml
@@ -18,6 +19,23 @@ def _files(target: Path) -> list[Path]:
     if target.is_dir():
         return sorted(p for p in target.rglob("*") if p.suffix.lower() in EXTENSIONS)
     return [target]
+
+
+def survey(target: Path | str, max_ocr_pages: int = 25) -> dict:
+    """Folder-wide triage: doc counts, OCR-page total, files over the cap.
+
+    Pure — writes nothing. Used by `biblio add --dry-run` and by the CLI's
+    pre-ingest cap gate. `max_ocr_pages` 0 disables the over-cap flagging.
+    """
+    files = _files(Path(target))
+    by_ext = Counter(f.suffix.lower() for f in files)
+    ocr_by_file = {f: len(triage(f)["ocr"])
+                   for f in files if f.suffix.lower() == ".pdf"}
+    over_cap = ({f: n for f, n in ocr_by_file.items() if n > max_ocr_pages}
+                if max_ocr_pages else {})
+    return {"files": files, "by_ext": dict(by_ext), "ocr_by_file": ocr_by_file,
+            "total_ocr": sum(ocr_by_file.values()), "over_cap": over_cap,
+            "max_ocr_pages": max_ocr_pages}
 
 
 def _frontmatter(s, doc: str) -> str:
@@ -132,7 +150,7 @@ def _process_one(path: Path, bibliotheca: Path, device: str, force: bool,
 def ingest(target: Path | str, output: Path | str | None = None, device: str = "auto",
            force: bool = False, warn=print, ask=None,
            summary: str = "auto", max_size_mb: float | None = None,
-           fast: bool = False) -> dict[str, int]:
+           fast: bool = False, exclude=frozenset()) -> dict[str, int]:
     """Processes a file (.pdf/.md/.txt) or a folder.
 
     `warn` is the only progress channel: the GUI passes its own.
@@ -140,13 +158,18 @@ def ingest(target: Path | str, output: Path | str | None = None, device: str = "
     'no' never summarizes.
     `max_size_mb`: skips files larger than this (None = no limit).
     `fast`: skips Docling/OCR, uses pymupdf4llm for everything.
+    `exclude`: paths to skip (the CLI's over-OCR-cap set).
     """
     bibliotheca = root(output)
     bibliotheca.mkdir(parents=True, exist_ok=True)
+    register(bibliotheca)  # early: a multi-day or interrupted run must still be visible
     summarize_with_ollama = ollama.wants_summary(summary, ask, warn)
 
     count = {"ok": 0, "skipped": 0, "failed": 0}
     for f in _files(Path(target)):
+        if f in exclude:
+            count["skipped"] += 1
+            continue
         try:
             count[_process_one(f, bibliotheca, device, force, warn,
                                summarize_with_ollama,
@@ -155,6 +178,9 @@ def ingest(target: Path | str, output: Path | str | None = None, device: str = "
             warn(f"{f.name}: FAILED ({err})")
             count["failed"] += 1
 
-    if count["ok"] or count["skipped"]:
-        register(bibliotheca)
+    if exclude:
+        warn("\nskipped (over OCR budget):")
+        for f in sorted(exclude):
+            warn(f'  {f.stem}  — run: biblio add "{f}" --fast   '
+                 f'(or --max-ocr-pages 0)')
     return count
