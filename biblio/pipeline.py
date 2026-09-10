@@ -1,5 +1,6 @@
 """ingest(): the single entry point. CLI and GUI are shells over it."""
 import re
+from collections import Counter
 from pathlib import Path
 
 import yaml
@@ -18,6 +19,23 @@ def _files(target: Path) -> list[Path]:
     if target.is_dir():
         return sorted(p for p in target.rglob("*") if p.suffix.lower() in EXTENSIONS)
     return [target]
+
+
+def survey(target: Path | str, max_ocr_pages: int = 25) -> dict:
+    """Folder-wide triage: doc counts, OCR-page total, files over the cap.
+
+    Pure — writes nothing. Used by `biblio add --dry-run` and by the CLI's
+    pre-ingest cap gate. `max_ocr_pages` 0 disables the over-cap flagging.
+    """
+    files = _files(Path(target))
+    by_ext = Counter(f.suffix.lower() for f in files)
+    ocr_by_file = {f: len(triage(f)["ocr"])
+                   for f in files if f.suffix.lower() == ".pdf"}
+    over_cap = ({f: n for f, n in ocr_by_file.items() if n > max_ocr_pages}
+                if max_ocr_pages else {})
+    return {"files": files, "by_ext": dict(by_ext), "ocr_by_file": ocr_by_file,
+            "total_ocr": sum(ocr_by_file.values()), "over_cap": over_cap,
+            "max_ocr_pages": max_ocr_pages}
 
 
 def _frontmatter(s, doc: str) -> str:

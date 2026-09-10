@@ -76,3 +76,36 @@ def test_update_on_windows_prints_command_and_does_not_run(monkeypatch, capsys):
     assert calls == []
     out = capsys.readouterr().out
     assert "pip install --upgrade git+https://github.com/PedroHCosme/biblio.git" in out
+
+
+def _blank_pdf(path, n_pages):
+    import pymupdf
+    doc = pymupdf.open()
+    for _ in range(n_pages):
+        doc.new_page()
+    doc.save(path)
+    doc.close()
+    return path
+
+
+def test_survey_aggregates_ocr_pages_and_flags_over_cap(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "note.md").write_text("# x\ny", encoding="utf-8")
+    big = _blank_pdf(src / "big.pdf", 4)      # 4 OCR pages
+    small = _blank_pdf(src / "small.pdf", 1)  # 1 OCR page
+
+    report = pipeline.survey(src, max_ocr_pages=2)
+
+    assert report["total_ocr"] == 5
+    assert report["by_ext"] == {".md": 1, ".pdf": 2}
+    assert set(report["over_cap"]) == {big}
+    assert small not in report["over_cap"]
+    assert report["max_ocr_pages"] == 2
+
+
+def test_survey_zero_cap_flags_nothing(tmp_path):
+    src = tmp_path / "src"
+    src.mkdir()
+    _blank_pdf(src / "big.pdf", 4)
+    assert pipeline.survey(src, max_ocr_pages=0)["over_cap"] == {}
