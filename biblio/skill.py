@@ -79,19 +79,42 @@ It was written for `grep`, not for reading.
 
 ## Ingesting a folder
 
-Before ingesting a folder for the user, estimate the cost first:
+`biblio add` asks the user interactively when run from a real terminal — you
+have no tty, so those prompts are silently skipped and defaults apply
+instead. Never let that happen silently: ask the same questions yourself,
+before running `add` for real, covering every flag below.
+
+**1. Survey first, always** — never ingest blind:
 
 ```bash
 {command} add <folder> --dry-run
 ```
 
-Show them the document count and the OCR-page estimate. If any file is flagged
-over the OCR cap, put the choice to the user — index that file `--fast` (native
-text only, scanned pages come out empty), raise `--max-ocr-pages`, or skip it.
-Do **not** pass `--yes` past the cap without their OK.
+This prints document count, file types, and the OCR-page time estimate, and
+lists any files over the OCR cap. Use these numbers to fill in the questions
+below (e.g. only ask about the OCR cap if the survey actually flagged files).
 
-Summaries stay opt-in: pass `--summary` only if the user asked. A plain `add`
-prompts once if Ollama is installed.
+**2. Ask about every `add` option**, using `AskUserQuestion` (batch into as
+many calls as needed — do not skip any to save a round trip):
+
+| Flag | Question to ask | Default if user has no preference |
+|---|---|---|
+| `--out` | Which bibliotheca? (existing name from `biblio libs`, or a new one) | `geral` |
+| `--summary` / `--no-summary` | Generate summaries/terms per document? May download ~1.4 GB (Ollama + qwen) on first use | no |
+| `--max-ocr-pages` | *(only if the dry-run flagged files over the cap)* Proceed with all, skip the flagged files, or raise/remove the cap? | skip the flagged files |
+| `--fast` | Skip OCR entirely (fast, but scanned pages come out empty)? | no — keep OCR |
+| `--max-size` | Skip files above some size in MB? | no limit |
+| `--force` | Reprocess files even if unchanged? | no |
+| `--device` | Force a device (`cpu`/`cuda`), or auto-detect? | auto |
+
+Do **not** pass `--yes` or default past the OCR cap without the user's OK —
+that's the one flag CLI users would never hit blind, so you shouldn't either.
+
+**3. Run `add` once with every answer folded in**, e.g.:
+
+```bash
+{command} add <folder> --summary --max-ocr-pages 0 --max-size 50
+```
 
 ## Other commands
 
