@@ -92,7 +92,7 @@ def test_update_on_windows_prints_command_and_does_not_run(monkeypatch, capsys):
     assert rc == 0
     assert calls == []
     out = capsys.readouterr().out
-    assert "pip install --upgrade git+https://github.com/PedroHCosme/biblio.git" in out
+    assert "pip install --upgrade git+https://github.com/PedroHCosme/bibliotheca.git" in out
 
 
 def _blank_pdf(path, n_pages):

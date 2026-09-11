@@ -259,7 +259,7 @@ def main(argv=None) -> int:
         return 0
 
     if args.command == "update":
-        url = "git+https://github.com/PedroHCosme/biblio.git"
+        url = "git+https://github.com/PedroHCosme/bibliotheca.git"
         if sys.platform == "win32":
             print("biblio can't update itself on Windows (the running .exe is locked).\n"
                   "Run this in a fresh shell:\n\n"

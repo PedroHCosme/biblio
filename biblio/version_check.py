@@ -2,7 +2,7 @@
 import re
 import urllib.request
 
-REPO_RAW = "https://raw.githubusercontent.com/PedroHCosme/biblio/main/pyproject.toml"
+REPO_RAW = "https://raw.githubusercontent.com/PedroHCosme/bibliotheca/main/pyproject.toml"
 
 
 def _installed_version() -> str:
